@@ -44,6 +44,7 @@ No memory leak this way.
 (get-text-property (point) 'occur-target)
 
 use propertize to make string
-* TODO test setup
+* DONE test setup
+CLOSED: [2020-12-05 Sat 11:44]
 cask install
 cask exec ert-runner

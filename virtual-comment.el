@@ -21,6 +21,16 @@
 ;;; Commentary:
 ;; FIXME
 
+(defvar-local virtual-comment-project-comments nil
+  "Project comments.")
+
+(defvar-local virtual-comment-buffer-comments nil
+  "Buffer comments.")
+
+(defvar virtual-comment-global-comment-store nil
+  "Global comment store.")
+
+(defvar )
 (provide 'virtual-comment)
 
 ;;; virtual-comment.el ends here
