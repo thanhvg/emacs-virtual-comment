@@ -1,0 +1,49 @@
+#+startup:    content indent
+
+* overview, design
+because parsing the text file is tedious store in elisp format and have a
+special mode to read it and show it in a buffer.
+
+persistent file is project based or global
+
+must have something like project based management mechanism to share 
+
+such as tide.
+
+when a buffer with icl mode on started up it will locate its project root which resolves
+to global or project root. The project root is now a unique key to indentify the comment store
+
+there is a global comment store which is a map of project  root -> project comment store
+
+project comment store:
+- comments: (file (line . comment)...)
+- count: number of active buffers reading this store, when is is down to zero comments will be set to nil
+- hook: this hook runs on store changed
+
+** use case:
+in project A, buffer a starts up and gets its project unique key as A,
+From the global comment stores it gets it project comment store.
+It is nil and the count is now set to 0.
+With the count value it knows that it is the first one to access this store. 
+It updates the count to one and initializes comments value for project.
+Then it reads the comments from the store and show the comments in buffers.
+
+Next a buffer b in project A starts up, and follows the same procedure but the
+count is already greater than 0 so it means the project comment store is
+already set up to go. So buffer b will just use the store and increase the count.
+
+Some time later buffer b closes, it will decrease the count. It check the count
+is still greater than 0
+
+And finally buffer a is about to close. After decreasing the count to 0, that
+means it is the last consumer of the store so it set the comment variable to
+nil. Persist the data to a .ilc file
+
+No memory leak this way.
+** occur mode add marker info to text 
+(get-text-property (point) 'occur-target)
+
+use propertize to make string
+* TODO test setup
+cask install
+cask exec ert-runner

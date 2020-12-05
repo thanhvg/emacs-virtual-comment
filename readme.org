@@ -1,0 +1,6 @@
+#+startup:    content indent
+* test
+#+begin_src sh
+cask install
+cask exec ert-runner
+#+end_src
