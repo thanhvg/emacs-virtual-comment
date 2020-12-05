@@ -21,16 +21,32 @@
 ;;; Commentary:
 ;; FIXME
 
-(defvar-local virtual-comment-project-comments nil
+
+(require 'project)
+
+(defvar-local virtual-comment-project-data nil
   "Project comments.")
 
-(defvar-local virtual-comment-buffer-comments nil
+(defvar-local virtual-comment-buffer-data nil
   "Buffer comments.")
 
-(defvar virtual-comment-global-comment-store nil
+(defvar virtual-comment-global-store nil
   "Global comment store.")
 
-(defvar )
-(provide 'virtual-comment)
+(defvar virtual-comment-global-file "~/.evc")
 
+(defun virtual-comment-get-project-path ()
+  (let ((root (cdr (project-current))))
+    (if root
+        (concat root ".evc")
+      virtual-commnent-global-file)))
+
+(defun virtual-comment-read-data-from-file (file)
+  (message "FIXME"))
+
+(defun virtual-comment-init-global-store ()
+  (setq virtual-comment-global-store
+        (make-hash-table :test 'equal :weakness 'value)))
+
+(provide 'virtual-comment)
 ;;; virtual-comment.el ends here
