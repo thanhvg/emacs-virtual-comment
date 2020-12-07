@@ -48,3 +48,21 @@ use propertize to make string
 CLOSED: [2020-12-05 Sat 11:44]
 cask install
 cask exec ert-runner
+
+* data stucture for project
+hash table
+project: file -> comments { line: comment } 
+#+begin_src elisp
+((#<overlay from 8503 to 8503 in ipa.el> .
+            #("need to forward-char here" 0 25
+              (fontified nil)))
+ (#<overlay from 22765 to 22765 in ipa.el> .
+            #("use project
+multiple line really" 0 11
+(fontified nil)
+12 32
+(fontified nil)))
+ (#<overlay from 23192 to 23192 in ipa.el> .
+            #("take care of project option" 0 27
+              (fontified nil))))
+#+end_src
