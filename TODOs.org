@@ -66,3 +66,6 @@ multiple line really" 0 11
             #("take care of project option" 0 27
               (fontified nil))))
 #+end_src
+
+* overlay structure
+(overlay-put (make-overlay (point) (point) (current-buffer)) 'before-string "crap")

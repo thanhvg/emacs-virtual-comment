@@ -48,5 +48,30 @@
   (setq virtual-comment-global-store
         (make-hash-table :test 'equal :weakness 'value)))
 
+(defun virtual-comment-load-into-buffer ()
+  "Load comments from store."
+  
+  )
+
+(define-minor-mode virtual-comment-mode
+  "FIXME."
+  :lighter "evc"
+  :keymap (make-sparse-keymap)
+  (if virtual-comment-mode
+      (virtual-comment-mode-enable)
+    (virtual-comment-mode-disable)))
+
+(defun virtual-comment-mode-enable ()
+  (add-hook 'after-save-hook 'virtual-comment-save-in-buffer 0 t)
+  (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
+  (setq virtual-comment-buffer-data nil)
+  (virtual-comment-load-into-buffer))
+
+(defun virtual-comment-mode-disable ()
+  (remove-hook 'after-save-hook 'virtual-comment-save-in-buffer t)
+  (remove-hook 'before-revert-hook 'virtual-comment-clear t)
+  ;; (virtual-comment-clear)
+  (kill-local-variable 'virtial-comment-in-buffer))
+
 (provide 'virtual-comment)
 ;;; virtual-comment.el ends here
