@@ -21,7 +21,7 @@
 ;;; Commentary:
 ;; FIXME
 
-
+;;; Code:
 (require 'project)
 
 (defvar-local virtual-comment-project-data nil
@@ -59,17 +59,67 @@ Currently is a list of (point . comment). But could be a hash table.")
   "Load comments from store."
   )
 
+;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
+(defun virtual-comment--read-string-with-multiple-line (prompt pre-string exit-keyseq clear-keyseq)
+  "Read multiline from minibuffer.
+
+PROMPT with PRE-STRING binds EXIT-KEYSEQ to submit binds
+CLEAR-KEYSEQ to clear text."
+  (let ((keymap (copy-keymap minibuffer-local-map))
+        ;; enable evil in minibuffer
+        ;; https://github.com/emacs-evil/evil/pull/1059
+        (evil-want-minibuffer t))
+    (define-key keymap (kbd "RET") 'newline)
+    (define-key keymap exit-keyseq 'exit-minibuffer)
+    (define-key keymap clear-keyseq
+      (lambda () (interactive) (delete-region (minibuffer-prompt-end) (point-max))))
+    (read-from-minibuffer prompt pre-string keymap)))
+
+(defun virtual-comment--read-string (prompt &optional pre-string)
+  "Prompt for multiline string and return it.
+
+PROMPT is show in multiline, PRE-STRING is string added to the
+prompt"
+  (virtual-comment--read-string-with-multiple-line
+   (concat prompt " C-s to submit, C-g to cancel, C-c C-k to clear:\n")
+   pre-string
+   (kbd "C-s")
+   (kbd "C-c C-k")))
+
+(defun virtual-comment--get-overlay-at (point)
+  "Return the overlay comment of this POINT."
+  (seq-find (lambda (it) (overlay-get it 'before-string))
+            (overlays-at point)))
+
+
+(defun virtual-comment--get-data-at (point)
+  "Return data at POINT."
+  (seq-find (lambda (it) (= point (car it)))
+            virtual-comment-buffer-data))
+
+(defun virtual-comment--get-comment-at (point)
+  "Return comment at POINT."
+  (when-let (data (virtual-comment--get-data-at point))
+    (cdr data)))
+
 (defun virtual-comment-make-comment-here ()
-  (let ((point (point-at-bol)))
+  "Add or edit comment at current line."
+  (interactive)
+  (let* ((point (point-at-bol))
+         (comment (virtual-comment--read-string
+                   "Insert comment:"
+                   (virtual-comment--get-comment-at point))))
+    ;; must get existing overlay when comment is not nill
     (overlay-put (make-overlay point point nil t nil)
                  'before-string
-                 "Yay commnent\n")
-    (push (cons point "a comment") virtual-comment-buffer-data)))
+                 (concat comment "\n"))
+    ;; TODO delete comment from db when comment is nil
+    (push (cons point comment) virtual-comment-buffer-data)))
 
-(defun virtual-comment--delete-comment-here (point)
-  "Delete the comment at current point.
+(defun virtual-comment--delete-comment-at (point)
+  "Delete the comment at point POINT.
 
-Find the overlay for this line and delete it. Update the store."
+Find the overlay for this POINT and delete it. Update the store."
   (when-let (found (seq-find (lambda (it) (= point (car it)))
                              virtual-comment-buffer-data))
     ;; (message "I found it")
@@ -83,12 +133,12 @@ Find the overlay for this line and delete it. Update the store."
 (defun virtual-comment-delete-comment-here ()
   "Delete comments of this current line."
   (let ((point (point-at-bol)))
-    (virtual-comment--delete-comment-here point)))
+    (virtual-comment--delete-comment-at point)))
 
 (define-minor-mode virtual-comment-mode
   "FIXME."
   :lighter "evc"
-  :keymap (make-sparse-keymap)//
+  :keymap (make-sparse-keymap)
   (if virtual-comment-mode
       (virtual-comment-mode-enable)
     (virtual-comment-mode-disable)))
