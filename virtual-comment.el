@@ -28,12 +28,19 @@
   "Project comments.")
 
 (defvar-local virtual-comment-buffer-data nil
-  "Buffer comments.")
+  "Buffer comments.
+
+Currently is a list of (point . comment). But could be a hash table.")
 
 (defvar virtual-comment-global-store nil
   "Global comment store.")
 
 (defvar virtual-comment-global-file "~/.evc")
+
+(defcustom virtual-comment-face 'highlight
+  "Face for annotations."
+  :type 'face
+  :group 'virtual-comment)
 
 (defun virtual-comment-get-project-path ()
   (let ((root (cdr (project-current))))
@@ -50,13 +57,38 @@
 
 (defun virtual-comment-load-into-buffer ()
   "Load comments from store."
-  
   )
+
+(defun virtual-comment-make-comment-here ()
+  (let ((point (point-at-bol)))
+    (overlay-put (make-overlay point point nil t nil)
+                 'before-string
+                 "Yay commnent\n")
+    (push (cons point "a comment") virtual-comment-buffer-data)))
+
+(defun virtual-comment--delete-comment-here (point)
+  "Delete the comment at current point.
+
+Find the overlay for this line and delete it. Update the store."
+  (when-let (found (seq-find (lambda (it) (= point (car it)))
+                             virtual-comment-buffer-data))
+    ;; (message "I found it")
+    (dolist (o (overlays-in point point))
+      (when (overlay-get o 'before-string)
+        (delete-overlay o)))
+    (setq virtual-comment-buffer-data
+          (seq-remove (lambda (it) (= point (car it)))
+                      virtual-comment-buffer-data))))
+
+(defun virtual-comment-delete-comment-here ()
+  "Delete comments of this current line."
+  (let ((point (point-at-bol)))
+    (virtual-comment--delete-comment-here point)))
 
 (define-minor-mode virtual-comment-mode
   "FIXME."
   :lighter "evc"
-  :keymap (make-sparse-keymap)
+  :keymap (make-sparse-keymap)//
   (if virtual-comment-mode
       (virtual-comment-mode-enable)
     (virtual-comment-mode-disable)))
