@@ -69,3 +69,21 @@ multiple line really" 0 11
 
 * overlay structure
 (overlay-put (make-overlay (point) (point) (current-buffer)) 'before-string "crap")
+
+(overlay-put (make-overlay (point) (point) (current-buffer)) 'before-string "crap")
+* problem with overlay moving
+if only data structure is kept i.e line number and string
+then when overlay is moved because of buffer change then we lose track of overlay
+
+overlay should stick to the line it belongs to, eg symbol-overlay
+
+in buffer 
+
+we don't manage the ov list anymore sorting it keep it in order is a headache
+just grab all the overlays in the buffer which has the tag then this is it.
+
+https://www.gnu.org/software/emacs/manual/html_node/elisp/Finding-Overlays.html
+
+for next and previous
+next-overlay-change pos
+previous-overlay-change pos

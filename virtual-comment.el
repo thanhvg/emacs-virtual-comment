@@ -29,8 +29,28 @@
 
 (defvar-local virtual-comment-buffer-data nil
   "Buffer comments.
-
 Currently is a list of (point . comment). But could be a hash table.")
+
+(defvar-local virtual-comment-buffer-overlays nil
+  "Buffer overlay comments.
+Currently is a list of overlays. Should be sorted.")
+
+(defun virtual-comment-buffer-overlays--add (ov my-list)
+  "MY-LIST has at least one element and its head is smaller than OV."
+  (let ((start (overlay-start ov))
+        (head (car my-list))
+        (tail (cdr my-list)))
+    (if (or (not tail)
+            (<= start (overlay-start (car tail))))
+        (setcdr my-list (cons ov tail))
+      (virtual-comment-buffer-overlays--add ov tail))))
+
+(defun virtual-comment-buffer-overlays-add (ov)
+  "Add OV to `virtual-comment-buffer-overlays' in order."
+  (if (or (not virtual-comment-buffer-overlays)
+          (< (overlay-start ov) (overlay-start (car virtual-comment-buffer-overlays))))
+      (push ov virtual-comment-buffer-overlays)
+    (virtual-comment-buffer-overlays--add ov virtual-comment-buffer-overlays)))
 
 (defvar virtual-comment-global-store nil
   "Global comment store.")
@@ -62,7 +82,6 @@ Currently is a list of (point . comment). But could be a hash table.")
 ;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
 (defun virtual-comment--read-string-with-multiple-line (prompt pre-string exit-keyseq clear-keyseq)
   "Read multiline from minibuffer.
-
 PROMPT with PRE-STRING binds EXIT-KEYSEQ to submit binds
 CLEAR-KEYSEQ to clear text."
   (let ((keymap (copy-keymap minibuffer-local-map))
@@ -89,8 +108,7 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find (lambda (it) (overlay-get it 'before-string))
-            (overlays-at point)))
-
+            (overlays-in point point)))
 
 (defun virtual-comment--get-data-at (point)
   "Return data at POINT."
@@ -99,36 +117,37 @@ prompt"
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment at POINT."
-  (when-let (data (virtual-comment--get-data-at point))
-    (cdr data)))
+  (when-let (ov (virtual-comment--get-overlay-at point))
+    (overlay-get ov 'before-string)))
+
+(defun virtual-comment--insert-hook-handler (ov is-before begin end &optional pre-change)
+  "Move overlay back to the front"
+  (message "yay: %s" ov)
+  (let ((point (point-at-bol)))
+    (move-overlay ov point point)))
 
 (defun virtual-comment-make-comment-here ()
   "Add or edit comment at current line."
   (interactive)
   (let* ((point (point-at-bol))
+         (org-comment (virtual-comment--get-comment-at point))
          (comment (virtual-comment--read-string
                    "Insert comment:"
-                   (virtual-comment--get-comment-at point))))
-    ;; must get existing overlay when comment is not nill
-    (overlay-put (make-overlay point point nil t nil)
-                 'before-string
-                 (concat comment "\n"))
-    ;; TODO delete comment from db when comment is nil
-    (push (cons point comment) virtual-comment-buffer-data)))
+                   org-comment))
+         ;; must get existing overlay when comment is not nill
+         (ov (if org-comment (virtual-comment--get-overlay-at point)
+               (make-overlay point point nil t nil))))
+    (overlay-put ov 'before-string (concat comment "\n"))
+    (unless org-comment
+      (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
+      (push ov virtual-comment-buffer-overlays))))
 
 (defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
-
 Find the overlay for this POINT and delete it. Update the store."
-  (when-let (found (seq-find (lambda (it) (= point (car it)))
-                             virtual-comment-buffer-data))
-    ;; (message "I found it")
-    (dolist (o (overlays-in point point))
-      (when (overlay-get o 'before-string)
-        (delete-overlay o)))
-    (setq virtual-comment-buffer-data
-          (seq-remove (lambda (it) (= point (car it)))
-                      virtual-comment-buffer-data))))
+  (when-let (ov (virtual-comment--get-overlay-at point))
+    (delete-overlay ov)
+    (delq ov virtual-comment-buffer-overlays)))
 
 (defun virtual-comment-delete-comment-here ()
   "Delete comments of this current line."
