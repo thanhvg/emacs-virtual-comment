@@ -20,6 +20,9 @@
 
 ;;; Commentary:
 ;; FIXME
+;; Abbrevation
+;; cmt: comment
+;; ov: overlay
 
 ;;; Code:
 (require 'project)
@@ -31,10 +34,10 @@
   "Buffer comments.
 Currently is a list of (point . comment). But could be a hash table.")
 
+
 (defvar-local virtual-comment-buffer-overlays nil
   "Buffer overlay comments.
 Currently is a list of overlays. Should be sorted.")
-
 (defun virtual-comment-buffer-overlays--add (ov my-list)
   "MY-LIST has at least one element and its head is smaller than OV."
   (let ((start (overlay-start ov))
@@ -66,7 +69,7 @@ Currently is a list of overlays. Should be sorted.")
   (let ((root (cdr (project-current))))
     (if root
         (concat root ".evc")
-      virtual-commnent-global-file)))
+      virtual-comment-global-file)))
 
 (defun virtual-comment-read-data-from-file (file)
   (message "FIXME"))
@@ -96,7 +99,6 @@ CLEAR-KEYSEQ to clear text."
 
 (defun virtual-comment--read-string (prompt &optional pre-string)
   "Prompt for multiline string and return it.
-
 PROMPT is show in multiline, PRE-STRING is string added to the
 prompt"
   (virtual-comment--read-string-with-multiple-line
@@ -105,10 +107,14 @@ prompt"
    (kbd "C-s")
    (kbd "C-c C-k")))
 
+(defun virtual-comment--overlayp (ov)
+  "Predicate for OV being commnent."
+  (overlay-get ov 'evc))
+
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
-  (seq-find (lambda (it) (overlay-get it 'before-string))
-            (overlays-in point point)))
+  (seq-find #'virtual-comment--overlayp
+              (overlays-in point point)))
 
 (defun virtual-comment--get-data-at (point)
   "Return data at POINT."
@@ -120,11 +126,46 @@ prompt"
   (when-let (ov (virtual-comment--get-overlay-at point))
     (overlay-get ov 'before-string)))
 
-(defun virtual-comment--insert-hook-handler (ov is-before begin end &optional pre-change)
-  "Move overlay back to the front"
+(defun virtual-comment--insert-hook-handler (ov
+                                             is-before
+                                             begin
+                                             end &optional pre-change)
+  "Move overlay back to the front.
+OV is overlay, IS-BEFORE, BEGIN END and PRE-CHANGE are extra params."
   (message "yay: %s" ov)
   (let ((point (point-at-bol)))
     (move-overlay ov point point)))
+
+(defun virtual-comment--get-neighbor-cmt (point end-point getter-func)
+  "Return point of the neighbor comment of POINT, nil if not found.
+With GETTER-FUNC until END-POINT."
+  (let ((neighbor-pos (funcall getter-func point)))
+    (if (virtual-comment--get-overlay-at neighbor-pos)
+        neighbor-pos
+      (if (= neighbor-pos end-point)
+          nil
+        (virtual-comment--get-neighbor-cmt neighbor-pos
+                                           end-point
+                                           getter-func)))))
+
+(defun virtual-comment-next ()
+  "Go to next/below comment."
+  (interactive)
+  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-bol)
+                                                    (point-max)
+                                                    #'next-overlay-change))
+      ;; (goto-char point)
+      (progn (goto-char point) (message "%s thanh" point))
+    (message "No next comment found.")))
+
+(defun virtual-comment-previous ()
+  "Go to previous/above comment."
+  (interactive)
+  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-bol)
+                                                    (point-min)
+                                                    #'previous-overlay-change))
+      (progn (goto-char point) (message "%s thanh" point))
+    (message "No previous comment found.")))
 
 (defun virtual-comment-make-comment-here ()
   "Add or edit comment at current line."
@@ -139,15 +180,14 @@ prompt"
                (make-overlay point point nil t nil))))
     (overlay-put ov 'before-string (concat comment "\n"))
     (unless org-comment
-      (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
-      (push ov virtual-comment-buffer-overlays))))
+      (overlay-put ov 'evc t)
+      (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler)))))
 
 (defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
 Find the overlay for this POINT and delete it. Update the store."
   (when-let (ov (virtual-comment--get-overlay-at point))
-    (delete-overlay ov)
-    (delq ov virtual-comment-buffer-overlays)))
+    (delete-overlay ov)))
 
 (defun virtual-comment-delete-comment-here ()
   "Delete comments of this current line."

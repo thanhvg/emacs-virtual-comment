@@ -87,3 +87,5 @@ https://www.gnu.org/software/emacs/manual/html_node/elisp/Finding-Overlays.html
 for next and previous
 next-overlay-change pos
 previous-overlay-change pos
+* DONE next and previous comment
+
