@@ -67,6 +67,8 @@ multiple line really" 0 11
               (fontified nil))))
 #+end_src
 
+https://github.com/sigma/pcache
+
 * overlay structure
 (overlay-put (make-overlay (point) (point) (current-buffer)) 'before-string "crap")
 
@@ -98,3 +100,18 @@ there is a hook but it won't get triggered on some occasions so we won't handle
 it. instead we provide functions to repair, copy and paste comment
 
 yank, paste
+* data layer
+** function that grabs all the current overlays in buffer
+** function that takes overlays list and produces comment data structure
+
+read-from-string is a built-in function in ‘C source code’.
+
+(read-from-string STRING &optional START END)
+
+Read one Lisp expression which is represented as text by STRING.
+Returns a cons: (OBJECT-READ . FINAL-STRING-INDEX).
+FINAL-STRING-INDEX is an integer giving the position of the next
+remaining character in STRING.  START and END optionally delimit
+a substring of STRING from which to read;  they default to 0 and
+(length STRING) respectively.  Negative values are counted from
+the end of STRING.

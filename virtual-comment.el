@@ -35,7 +35,7 @@
 Currently is a list of (point . comment). But could be a hash table.")
 
 (defvar virtual-comment-yanked-overlay nil
-  "Ref to the overlay yanked")
+  "Ref of the overlay yanked.")
 
 (defvar-local virtual-comment-buffer-overlays nil
   "Buffer overlay comments.
@@ -118,6 +118,30 @@ prompt"
   (seq-find #'virtual-comment--overlayp
             (overlays-in point point)))
 
+(defun virtual-comment--get-buffer-overlays ()
+  "Get all overlay comment."
+  (seq-filter #'virtual-comment--overlayp
+            (overlays-in (point-min) (point-max))))
+
+(defun virtual-comment--repare-overlay-maybe (ov)
+  "Re-align coment overlay OV if necessary."
+  (save-excursion
+    (goto-char (overlay-start ov))
+    (unless (= (point) (point-at-bol))
+      ;; repair
+      (overlay-put ov
+                   'before-string
+                   (virtual-comment--make-comment-for-display
+                    (overlay-get ov 'virtual-comment)
+                    (current-indentation)))
+      (move-overlay ov (point-at-bol) (point-at-bol)))))
+
+(defun virtual-comment-repair-overlays-maybe ()
+  "Re-align overlays if necessary."
+  (interactive)
+  (mapc #'virtual-comment--repare-overlay-maybe
+        (virtual-comment--get-buffer-overlays)))
+
 (defun virtual-comment--get-data-at (point)
   "Return data at POINT."
   (seq-find (lambda (it) (= point (car it)))
@@ -189,7 +213,8 @@ With GETTER-FUNC until END-POINT."
            (split-string comment "\n")
            (concat "\n" (make-string indent ?\s)))
           "\n"))
-(defun virtual-comment-make-here ()
+
+(defun virtual-comment-make ()
   "Add or edit comment at current line."
   (interactive)
   (let* ((point (point-at-bol))
@@ -207,8 +232,8 @@ With GETTER-FUNC until END-POINT."
                  (virtual-comment--make-comment-for-display comment indent))
     ;; (unless org-comment
     ;;   (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
-      ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
-      ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
+    ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
+    ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
     ))
 
 (defun virtual-comment--yank-comment-at (point)
@@ -219,7 +244,7 @@ Find the overlay for this POINT and delete it. Update the store."
     (delete-overlay ov)))
 
 (defun virtual-comment-yank ()
- "Delete comments of this current line."
+  "Delete comments of this current line."
   (interactive)
   (let ((point (point-at-bol)))
     (virtual-comment--yank-comment-at point)))
