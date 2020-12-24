@@ -91,4 +91,10 @@ previous-overlay-change pos
 * DONE next and previous comment
 * DONE indentation comment
 how to extract and make/separate comment from indentation
-the real string stored n 'evc tags 'before-string is to store the presentational text
+the real string stored in 'virtual-comment tag
+'before-string is to store the presentational text
+* handle comment when its line moves is a big headache
+there is a hook but it won't get triggered on some occasions so we won't handle
+it. instead we provide functions to repair, copy and paste comment
+
+yank, paste
