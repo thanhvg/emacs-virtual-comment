@@ -109,12 +109,12 @@ prompt"
 
 (defun virtual-comment--overlayp (ov)
   "Predicate for OV being commnent."
-  (overlay-get ov 'evc))
+  (overlay-get ov 'virtual-comment))
 
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-              (overlays-in point point)))
+            (overlays-in point point)))
 
 (defun virtual-comment--get-data-at (point)
   "Return data at POINT."
@@ -122,19 +122,30 @@ prompt"
             virtual-comment-buffer-data))
 
 (defun virtual-comment--get-comment-at (point)
-  "Return comment at POINT."
+  "Return comment string at POINT."
   (when-let (ov (virtual-comment--get-overlay-at point))
-    (overlay-get ov 'before-string)))
+    (overlay-get ov 'virtual-comment)))
 
 (defun virtual-comment--insert-hook-handler (ov
-                                             is-before
+                                             is-after-change
                                              begin
-                                             end &optional pre-change)
+                                             end
+                                             &optional pre-change)
   "Move overlay back to the front.
-OV is overlay, IS-BEFORE, BEGIN END and PRE-CHANGE are extra params."
-  (message "yay: %s" ov)
-  (let ((point (point-at-bol)))
-    (move-overlay ov point point)))
+OV is overlay, IS-AFTER-CHANGE, BEGIN END and PRE-CHANGE are extra
+params. If there is already a ov comment on the line, the moved
+ov will be discarded and its comment will be added to the host
+comment."
+  (when is-after-change
+    (message "yay: ov:%s begin:%s end:%s indentation:%s" ov begin end (current-indentation))
+    (let* ((point (point-at-bol))
+           (comment (overlay-get ov 'virtual-comment))
+           (comment-for-display (virtual-comment--make-comment-for-display
+                                 comment
+                                 (current-indentation))))
+      (move-overlay ov point point)
+      (overlay-put ov 'before-string comment-for-display)
+      (overlay-put ov 'virtual-comment comment))))
 
 (defun virtual-comment--get-neighbor-cmt (point end-point getter-func)
   "Return point of the neighbor comment of POINT, nil if not found.
@@ -147,7 +158,6 @@ With GETTER-FUNC until END-POINT."
         (virtual-comment--get-neighbor-cmt neighbor-pos
                                            end-point
                                            getter-func)))))
-
 (defun virtual-comment-next ()
   "Go to next/below comment."
   (interactive)
@@ -167,10 +177,21 @@ With GETTER-FUNC until END-POINT."
       (progn (goto-char point) (message "%s thanh" point))
     (message "No previous comment found.")))
 
-(defun virtual-comment-make-comment-here ()
+(defun virtual-comment--make-comment-for-display (comment indent)
+  "Make a comment string with face and INDENT from COMMENT for display."
+  (concat (make-string indent ?\s)
+          (mapconcat
+           (lambda (it)
+             (propertize it 'face virtual-comment-face))
+           (split-string comment "\n")
+           (concat "\n" (make-string indent ?\s)))
+          "\n"))
+
+(defun virtual-comment-make-here ()
   "Add or edit comment at current line."
   (interactive)
   (let* ((point (point-at-bol))
+         (indent (current-indentation))
          (org-comment (virtual-comment--get-comment-at point))
          (comment (virtual-comment--read-string
                    "Insert comment:"
@@ -178,9 +199,11 @@ With GETTER-FUNC until END-POINT."
          ;; must get existing overlay when comment is not nill
          (ov (if org-comment (virtual-comment--get-overlay-at point)
                (make-overlay point point nil t nil))))
-    (overlay-put ov 'before-string (concat comment "\n"))
+    (overlay-put ov 'virtual-comment comment)
+    (overlay-put ov
+                 'before-string
+                 (virtual-comment--make-comment-for-display comment indent))
     (unless org-comment
-      (overlay-put ov 'evc t)
       (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler)))))
 
 (defun virtual-comment--delete-comment-at (point)
@@ -189,8 +212,9 @@ Find the overlay for this POINT and delete it. Update the store."
   (when-let (ov (virtual-comment--get-overlay-at point))
     (delete-overlay ov)))
 
-(defun virtual-comment-delete-comment-here ()
+(defun virtual-comment-delete-here ()
   "Delete comments of this current line."
+  (interactive)
   (let ((point (point-at-bol)))
     (virtual-comment--delete-comment-at point)))
 

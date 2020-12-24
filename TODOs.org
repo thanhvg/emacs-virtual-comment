@@ -87,5 +87,8 @@ https://www.gnu.org/software/emacs/manual/html_node/elisp/Finding-Overlays.html
 for next and previous
 next-overlay-change pos
 previous-overlay-change pos
+* TODO merge comments when the lines they are on are joined into one line
 * DONE next and previous comment
-
+* DONE indentation comment
+how to extract and make/separate comment from indentation
+the real string stored n 'evc tags 'before-string is to store the presentational text
