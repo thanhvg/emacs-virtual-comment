@@ -25,14 +25,15 @@
 ;; ov: overlay
 
 ;;; Code:
+(require 'cl-lib)
 (require 'project)
 
 (defvar-local virtual-comment-project-data nil
   "Project comments.")
 
-(defvar-local virtual-comment-buffer-data nil
-  "Buffer comments.
-Currently is a list of (point . comment). But could be a hash table.")
+;; (defvar-local virtual-comment-buffer-data nil
+;;   "Buffer comments.
+;; Currently is a list of (point . comment). But could be a hash table.")
 
 (defvar virtual-comment-yanked-overlay nil
   "Ref of the overlay yanked.")
@@ -40,6 +41,12 @@ Currently is a list of (point . comment). But could be a hash table.")
 (defvar-local virtual-comment-buffer-overlays nil
   "Buffer overlay comments.
 Currently is a list of overlays. Should be sorted.")
+
+(cl-defstruct (virtual-comment-buffer-data
+               (:constructor virtual-comment-buffer-data-create)
+               (:copier nil))
+  filename comments)
+
 (defun virtual-comment-buffer-overlays--add (ov my-list)
   "MY-LIST has at least one element and its head is smaller than OV."
   (let ((start (overlay-start ov))
@@ -57,6 +64,28 @@ Currently is a list of overlays. Should be sorted.")
       (push ov virtual-comment-buffer-overlays)
     (virtual-comment-buffer-overlays--add ov virtual-comment-buffer-overlays)))
 
+(defun virtual-comment--get-data ()
+  "Get struct `virtual-comment-buffer-overlays' if nil then create it."
+  (unless virtual-comment-buffer-overlays
+    (setq virtual-comment-buffer-overlays (virtual-comment-buffer-data-create)))
+  virtual-comment-buffer-overlays)
+
+(defun virtual-comment--ovs-to-cmts (ovs)
+  "Maps overlay OVS list to list of (point . comment)."
+  (mapcar (lambda (ov)
+            (cons (overlay-start ov) (overlay-get ov 'virtual-comment)))
+          ovs))
+
+(defun virtual-comment--update-data ()
+  "Update."
+  (let ((data (virtual-comment--get-data))
+        (ovs (virtual-comment--get-buffer-overlays)))
+    ;; update file name
+    (setf (virtual-comment-buffer-data-filename data)
+          (virtual-comment--get-buffer-file-name))
+    (setf (virtual-comment-buffer-data-comments data)
+          (virtual-comment--ovs-to-cmts ovs))))
+
 (defvar virtual-comment-global-store nil
   "Global comment store.")
 
@@ -72,6 +101,15 @@ Currently is a list of overlays. Should be sorted.")
     (if root
         (concat root ".evc")
       virtual-comment-global-file)))
+
+(defun virtual-comment--get-buffer-file-name ()
+  "Return path from project root, nil when not a file."
+  (when-let ((name (buffer-file-name)))
+    (let ((root (cdr (project-current)))
+          (file-abs-path (file-truename name)))
+      (if root
+          (substring file-abs-path (length (file-truename root)))
+        file-abs-path))))
 
 (defun virtual-comment-read-data-from-file (file)
   (message "FIXME"))
@@ -121,7 +159,7 @@ prompt"
 (defun virtual-comment--get-buffer-overlays ()
   "Get all overlay comment."
   (seq-filter #'virtual-comment--overlayp
-            (overlays-in (point-min) (point-max))))
+              (overlays-in (point-min) (point-max))))
 
 (defun virtual-comment--repare-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
