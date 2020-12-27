@@ -38,14 +38,25 @@
 (defvar virtual-comment-yanked-overlay nil
   "Ref of the overlay yanked.")
 
+(defvar virtual-comment-global-file "~/.evc")
+
 (defvar-local virtual-comment-buffer-overlays nil
   "Buffer overlay comments.
 Currently is a list of overlays. Should be sorted.")
+
+(defvar virtual-comment-global-store nil
+  "Global comment store.")
+
+(defcustom virtual-comment-face 'highlight
+  "Face for annotations."
+  :type 'face
+  :group 'virtual-comment)
 
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
                (:copier nil))
   filename comments)
+
 
 (defun virtual-comment-buffer-overlays--add (ov my-list)
   "MY-LIST has at least one element and its head is smaller than OV."
@@ -86,17 +97,7 @@ Currently is a list of overlays. Should be sorted.")
     (setf (virtual-comment-buffer-data-comments data)
           (virtual-comment--ovs-to-cmts ovs))))
 
-(defvar virtual-comment-global-store nil
-  "Global comment store.")
-
-(defvar virtual-comment-global-file "~/.evc")
-
-(defcustom virtual-comment-face 'highlight
-  "Face for annotations."
-  :type 'face
-  :group 'virtual-comment)
-
-(defun virtual-comment-get-project-path ()
+(defun virtual-comment-get-evc-file ()
   (let ((root (cdr (project-current))))
     (if root
         (concat root ".evc")
@@ -110,6 +111,37 @@ Currently is a list of overlays. Should be sorted.")
       (if root
           (substring file-abs-path (length (file-truename root)))
         file-abs-path))))
+
+(defun virtual-comment--get-saved-file ()
+  "Return path to .ipa file at project root."
+  (let ((root (cdr (project-current))))
+    (if root
+        (concat root ".evc")
+      virtual-comment-global-file)))
+
+;; experimenting
+(defun virtual-comment--dump-data-to-file (data file)
+  "Dump DATA to .evc FILE."
+  (with-temp-file file
+    (let ((standard-output (current-buffer)))
+      (prin1 data))))
+
+(defun virtual-comment-dump-data ()
+  "Dump data."
+  (let ((data (virtual-comment--get-data))
+        (file (virtual-comment-get-evc-file)))
+    (virtual-comment--dump-data-to-file data file)))
+
+(defun virtual-comment--load-data-from-file (file)
+  "Read data from FILE."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (read (current-buffer))))
+
+(defun virtual-comment--load ()
+  "Load stuff."
+  (setq virtual-comment-buffer-overlays (virtual-comment--load-data-from-file
+                                      (virtual-comment--get-saved-file))))
 
 (defun virtual-comment-read-data-from-file (file)
   (message "FIXME"))

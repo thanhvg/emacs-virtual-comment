@@ -115,3 +115,6 @@ remaining character in STRING.  START and END optionally delimit
 a substring of STRING from which to read;  they default to 0 and
 (length STRING) respectively.  Negative values are counted from
 the end of STRING.
+** dump dat to file and load
+it's a experiment
+
