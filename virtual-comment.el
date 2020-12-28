@@ -28,9 +28,6 @@
 (require 'cl-lib)
 (require 'project)
 
-(defvar-local virtual-comment-project-data nil
-  "Project comments.")
-
 ;; (defvar-local virtual-comment-buffer-data nil
 ;;   "Buffer comments.
 ;; Currently is a list of (point . comment). But could be a hash table.")
@@ -40,12 +37,14 @@
 
 (defvar virtual-comment-global-file "~/.evc")
 
-(defvar-local virtual-comment-buffer-overlays nil
-  "Buffer overlay comments.
-Currently is a list of overlays. Should be sorted.")
+(defvar-local virtual-comment--buffer-data nil
+  "Buffer comment data.")
 
-(defvar virtual-comment-global-store nil
+(defvar virtual-comment--store nil
   "Global comment store.")
+
+(defvar-local virtual-comment--project nil
+  "Project comment store.")
 
 (defcustom virtual-comment-face 'highlight
   "Face for annotations."
@@ -57,29 +56,64 @@ Currently is a list of overlays. Should be sorted.")
                (:copier nil))
   filename comments)
 
+(cl-defstruct (virtual-comment-store
+               (:constructor virtual-comment-store-create)
+               (:copier nil))
+  "Global store of comments.
+Slot global is default store list of `virtual-comment-buffer-data'.
+Slot projects is list of `virtual-comment-project'."
+  global projects)
 
-(defun virtual-comment-buffer-overlays--add (ov my-list)
-  "MY-LIST has at least one element and its head is smaller than OV."
-  (let ((start (overlay-start ov))
-        (head (car my-list))
-        (tail (cdr my-list)))
-    (if (or (not tail)
-            (<= start (overlay-start (car tail))))
-        (setcdr my-list (cons ov tail))
-      (virtual-comment-buffer-overlays--add ov tail))))
+(cl-defstruct (virtual-comment-project
+               (:constructor virtual-comment-project-create)
+               (:copier nil))
+  "Project store of comments.
+Slot files is list of `virtual-comment-buffer-data'
+Slot count is reference count."
+  files count)
 
-(defun virtual-comment-buffer-overlays-add (ov)
-  "Add OV to `virtual-comment-buffer-overlays' in order."
-  (if (or (not virtual-comment-buffer-overlays)
-          (< (overlay-start ov) (overlay-start (car virtual-comment-buffer-overlays))))
-      (push ov virtual-comment-buffer-overlays)
-    (virtual-comment-buffer-overlays--add ov virtual-comment-buffer-overlays)))
+(defun virtual-comment--get-store ()
+  "Get comment store.
+If nil create it and create a hash table to :projects slot."
+  (unless virtual-comment--store
+    (setq virtual-comment--store (virtual-comment-store-create
+                                  :projects (make-hash-table :test 'equal))))
+  virtual-comment--store)
+
+(defun virtual-comment--get-project-in-store (project-id)
+  "Get project data from store using PROJECT-ID as key."
+  (let* ((store (virtual-comment--get-store))
+         (projects (virtual-comment-store-projects store)))
+    (if-let (prj (gethash project-id projects))
+        prj
+      (puthash project-id
+               ;; (virtual-comment-project-create :count 0 :files (make-hash-table :test 'equal))
+               (virtual-comment-project-create :count 0 :files nil)
+               ;; nil
+               projects))))
+
+(defun virtual-comment--make-project-id (project-location)
+  "Return project unique id form PROJECT-LOCATION."
+  (md5 project-location))
+
+(defun virtual-comment--get-project ()
+  "Get project from store.
+Return `virtual-comment--project'."
+  ;; TODO cache this value
+  (if virtual-comment--project
+      virtual-comment--project
+    (setq virtual-comment--project
+          (let* ((root (cdr (project-current)))
+                 (project-id (if root
+                                 (virtual-comment--make-project-id root)
+                               nil)))
+            (virtual-comment--get-project-in-store project-id)))))
 
 (defun virtual-comment--get-data ()
-  "Get struct `virtual-comment-buffer-overlays' if nil then create it."
-  (unless virtual-comment-buffer-overlays
-    (setq virtual-comment-buffer-overlays (virtual-comment-buffer-data-create)))
-  virtual-comment-buffer-overlays)
+  "Get struct `virtual-comment--buffer-data' if nil then create it."
+  (unless virtual-comment--buffer-data
+    (setq virtual-comment--buffer-data (virtual-comment-buffer-data-create)))
+  virtual-comment--buffer-data)
 
 (defun virtual-comment--ovs-to-cmts (ovs)
   "Maps overlay OVS list to list of (point . comment)."
@@ -98,6 +132,7 @@ Currently is a list of overlays. Should be sorted.")
           (virtual-comment--ovs-to-cmts ovs))))
 
 (defun virtual-comment-get-evc-file ()
+  "Return evc file path."
   (let ((root (cdr (project-current))))
     (if root
         (concat root ".evc")
@@ -140,19 +175,8 @@ Currently is a list of overlays. Should be sorted.")
 
 (defun virtual-comment--load ()
   "Load stuff."
-  (setq virtual-comment-buffer-overlays (virtual-comment--load-data-from-file
+  (setq virtual-comment--buffer-data (virtual-comment--load-data-from-file
                                       (virtual-comment--get-saved-file))))
-
-(defun virtual-comment-read-data-from-file (file)
-  (message "FIXME"))
-
-(defun virtual-comment-init-global-store ()
-  (setq virtual-comment-global-store
-        (make-hash-table :test 'equal :weakness 'value)))
-
-(defun virtual-comment-load-into-buffer ()
-  "Load comments from store."
-  )
 
 ;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
 (defun virtual-comment--read-string-with-multiple-line (prompt pre-string exit-keyseq clear-keyseq)
@@ -193,7 +217,7 @@ prompt"
   (seq-filter #'virtual-comment--overlayp
               (overlays-in (point-min) (point-max))))
 
-(defun virtual-comment--repare-overlay-maybe (ov)
+(defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
   (save-excursion
     (goto-char (overlay-start ov))
@@ -209,13 +233,8 @@ prompt"
 (defun virtual-comment-repair-overlays-maybe ()
   "Re-align overlays if necessary."
   (interactive)
-  (mapc #'virtual-comment--repare-overlay-maybe
+  (mapc #'virtual-comment--repair-overlay-maybe
         (virtual-comment--get-buffer-overlays)))
-
-(defun virtual-comment--get-data-at (point)
-  "Return data at POINT."
-  (seq-find (lambda (it) (= point (car it)))
-            virtual-comment-buffer-data))
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment string at POINT."
@@ -334,7 +353,7 @@ Find the overlay for this POINT and delete it. Update the store."
   (virtual-comment--paste-at (point-at-bol) (current-indentation)))
 
 (define-minor-mode virtual-comment-mode
-  "FIXME."
+  "This mode shows virtual commnents."
   :lighter "evc"
   :keymap (make-sparse-keymap)
   (if virtual-comment-mode
@@ -342,12 +361,14 @@ Find the overlay for this POINT and delete it. Update the store."
     (virtual-comment-mode-disable)))
 
 (defun virtual-comment-mode-enable ()
+  "Run when `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment-save-in-buffer 0 t)
   (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
-  (setq virtual-comment-buffer-data nil)
+  ;; (setq virtual-comment-buffer-data nil)
   (virtual-comment-load-into-buffer))
 
 (defun virtual-comment-mode-disable ()
+  "Run when `virtual-comment-mode' is off."
   (remove-hook 'after-save-hook 'virtual-comment-save-in-buffer t)
   (remove-hook 'before-revert-hook 'virtual-comment-clear t)
   ;; (virtual-comment-clear)

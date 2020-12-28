@@ -117,4 +117,24 @@ a substring of STRING from which to read;  they default to 0 and
 the end of STRING.
 ** dump dat to file and load
 it's a experiment
+* repair should take into account of indentation beside point-at-bol
+* unused sorting
+#+begin_src elisp
+(defun virtual-comment-buffer-overlays--add (ov my-list)
+  "MY-LIST has at least one element and its head is smaller than OV."
+  (let ((start (overlay-start ov))
+        (head (car my-list))
+        (tail (cdr my-list)))
+    (if (or (not tail)
+            (<= start (overlay-start (car tail))))
+        (setcdr my-list (cons ov tail))
+      (virtual-comment-buffer-overlays--add ov tail))))
 
+(defun virtual-comment-buffer-overlays-add (ov)
+  "Add OV to `virtual-comment-buffer-overlays' in order."
+  (if (or (not virtual-comment-buffer-overlays)
+          (< (overlay-start ov) (overlay-start (car virtual-comment-buffer-overlays))))
+      (push ov virtual-comment-buffer-overlays)
+    (virtual-comment-buffer-overlays--add ov virtual-comment-buffer-overlays)))
+
+#+end_src
