@@ -20,13 +20,14 @@
 
 ;;; Commentary:
 ;; FIXME
-;; Abbrevation
+;; Abbrevations:
 ;; cmt: comment
 ;; ov: overlay
 
 ;;; Code:
 (require 'cl-lib)
 (require 'project)
+(require 'subr-x)
 
 ;; (defvar-local virtual-comment-buffer-data nil
 ;;   "Buffer comments.
@@ -80,6 +81,7 @@ If nil create it and create a hash table to :projects slot."
                                   :projects (make-hash-table :test 'equal))))
   virtual-comment--store)
 
+;; TODO handle nil case return global
 (defun virtual-comment--get-project-in-store (project-id)
   "Get project data from store using PROJECT-ID as key."
   (let* ((store (virtual-comment--get-store))
@@ -91,6 +93,13 @@ If nil create it and create a hash table to :projects slot."
                (virtual-comment-project-create :count 0 :files nil)
                ;; nil
                projects))))
+
+(defun virtual-comment--remove-project-in-store (project-id)
+  "Remove project data from store using PROJECT-ID as key."
+  (let* ((store (virtual-comment--get-store))
+         (projects (virtual-comment-store-projects store)))
+      (remhash project-id
+               projects)))
 
 (defun virtual-comment--make-project-id (project-location)
   "Return project unique id form PROJECT-LOCATION."
@@ -108,11 +117,33 @@ Return `virtual-comment--project'."
                                nil)))
             (virtual-comment--get-project-in-store project-id)))))
 
-(defun virtual-comment--get-data ()
+(defun virtual-comment--remove-project ()
+  "Remove project from store."
+  (let* ((root (cdr (project-current)))
+         (project-id (if root
+                         (virtual-comment--make-project-id root)
+                       nil)))
+    (virtual-comment--remove-project-in-store project-id)))
+
+(defun virtual-comment--get-buffer-data-in-project (file-name prj)
+  "Get buffer data fro FILE-NAME from PRJ.
+If not found create it."
+  (if-let (data (gethash file-name (virtual-comment-project-files prj)))
+      data
+    (puthash file-name
+             (virtual-comment-buffer-data-create)
+             (virtual-comment-project-files prj))))
+
+(defun virtual-comment--get-buffer-data ()
   "Get struct `virtual-comment--buffer-data' if nil then create it."
-  (unless virtual-comment--buffer-data
-    (setq virtual-comment--buffer-data (virtual-comment-buffer-data-create)))
-  virtual-comment--buffer-data)
+  (if virtual-comment--buffer-data
+      virtual-comment--buffer-data
+    (let ((project-data (virtual-comment--get-project))
+          (file-name (virtual-comment--get-buffer-file-name)))
+      (setq
+       virtual-comment--buffer-data (virtual-comment--get-buffer-data-in-project
+                                     file-name
+                                     project-data)))))
 
 (defun virtual-comment--ovs-to-cmts (ovs)
   "Maps overlay OVS list to list of (point . comment)."
@@ -122,7 +153,7 @@ Return `virtual-comment--project'."
 
 (defun virtual-comment--update-data ()
   "Update."
-  (let ((data (virtual-comment--get-data))
+  (let ((data (virtual-comment--get-buffer-data))
         (ovs (virtual-comment--get-buffer-overlays)))
     ;; update file name
     (setf (virtual-comment-buffer-data-filename data)
@@ -162,9 +193,11 @@ Return `virtual-comment--project'."
 
 (defun virtual-comment-dump-data ()
   "Dump data."
-  (let ((data (virtual-comment--get-data))
+  (let ((data (virtual-comment--get-project))
         (file (virtual-comment-get-evc-file)))
-    (virtual-comment--dump-data-to-file data file)))
+    (virtual-comment--dump-data-to-file (virtual-comment-project-files
+                                         data)
+                                        file)))
 
 (defun virtual-comment--load-data-from-file (file)
   "Read data from FILE.
@@ -212,12 +245,12 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-            (overlays-in point point)))
+              (overlays-in point point)))
 
 (defun virtual-comment--get-buffer-overlays ()
   "Get all overlay comment."
   (seq-filter #'virtual-comment--overlayp
-              (overlays-in (point-min) (point-max))))
+                (overlays-in (point-min) (point-max))))
 
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
@@ -236,7 +269,7 @@ prompt"
   "Re-align overlays if necessary."
   (interactive)
   (mapc #'virtual-comment--repair-overlay-maybe
-        (virtual-comment--get-buffer-overlays)))
+          (virtual-comment--get-buffer-overlays)))
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment string at POINT."
@@ -276,6 +309,17 @@ With GETTER-FUNC until END-POINT."
                                            end-point
                                            getter-func)))))
 
+(defun virtual-comment--kill-buffer-hook-handler ()
+  "On buffer about to be killed.
+Decrease counter, check if should persist data."
+  (let ((data (virtual-comment--get-project)))
+    (cl-decf (virtual-comment-project-count data))
+    (when (= 0 (virtual-comment-project-count data))
+      (message "Persisting virtual comments...")
+      (virtual-comment-dump-data)
+      ;; remove project files from store
+      (virtual-comment--remove-project))))
+
 (defun virtual-comment-next ()
   "Go to next/below comment."
   (interactive)
@@ -304,6 +348,23 @@ With GETTER-FUNC until END-POINT."
            (split-string comment "\n")
            (concat "\n" (make-string indent ?\s)))
           "\n"))
+
+(defun virtual-comment--make (pair)
+  "Make a comment at point from PAIR of (point . comment)."
+  (let ((point (car pair))
+        (comment (cdr pair)))
+    (save-excursion
+      (goto-char point)
+      (let* ((indent (current-indentation))
+             (org-comment (virtual-comment--get-comment-at point))
+             (ov (if org-comment (virtual-comment--get-overlay-at point)
+                   (make-overlay point point))))
+        (overlay-put ov 'virtual-comment comment)
+        (overlay-put ov
+                     'before-string
+                     (virtual-comment--make-comment-for-display
+                      comment
+                      indent))))))
 
 (defun virtual-comment-make ()
   "Add or edit comment at current line."
@@ -364,11 +425,16 @@ Find the overlay for this POINT and delete it. Update the store."
       ;; not initialized yet. must update
       ;; first load project file
       (setf (virtual-comment-project-files project-data)
-            (virtual-comment--load-data-from-file (virtual-comment--get-saved-file))))
+            (if-let (my-data
+                     (virtual-comment--load-data-from-file (virtual-comment--get-saved-file)))
+                my-data
+              (make-hash-table :test 'equal))))
     ;; increase ref counter
     (cl-incf (virtual-comment-project-count project-data))
-    ;; get buffer data from project
-    ))
+    ;; get buffer data from project and make overlay
+    (mapc #'virtual-comment--make
+            (virtual-comment-buffer-data-comments
+             (virtual-comment--get-buffer-data)))))
 
 (define-minor-mode virtual-comment-mode
   "This mode shows virtual commnents."
@@ -380,17 +446,21 @@ Find the overlay for this POINT and delete it. Update the store."
 
 (defun virtual-comment-mode-enable ()
   "Run when `virtual-comment-mode' is on."
-  (add-hook 'after-save-hook 'virtual-comment-save-in-buffer 0 t)
+  (add-hook 'after-save-hook 'virtual-comment--update-data 0 t)
   (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
+  (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
   ;; (setq virtual-comment-buffer-data nil)
   (virtual-comment-load-store-maybe))
 
 (defun virtual-comment-mode-disable ()
   "Run when `virtual-comment-mode' is off."
-  (remove-hook 'after-save-hook 'virtual-comment-save-in-buffer t)
+  (remove-hook 'after-save-hook 'virtual-comment--update-data t)
   (remove-hook 'before-revert-hook 'virtual-comment-clear t)
+  (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   ;; (virtual-comment-clear)
-  (kill-local-variable 'virtial-comment-in-buffer))
+  (kill-local-variable 'virtual-comment--buffer-data)
+  (kill-local-variable 'virtual-comment--project))
 
 (provide 'virtual-comment)
+
 ;;; virtual-comment.el ends here
