@@ -99,7 +99,6 @@ If nil create it and create a hash table to :projects slot."
 (defun virtual-comment--get-project ()
   "Get project from store.
 Return `virtual-comment--project'."
-  ;; TODO cache this value
   (if virtual-comment--project
       virtual-comment--project
     (setq virtual-comment--project
@@ -168,10 +167,13 @@ Return `virtual-comment--project'."
     (virtual-comment--dump-data-to-file data file)))
 
 (defun virtual-comment--load-data-from-file (file)
-  "Read data from FILE."
+  "Read data from FILE.
+If not found or fail, return an empty hash talbe."
   (with-temp-buffer
-    (insert-file-contents file)
-    (read (current-buffer))))
+    (condition-case nil
+        (progn (insert-file-contents file)
+               (read (current-buffer)))
+      (error (make-hash-table :test 'equal)))))
 
 (defun virtual-comment--load ()
   "Load stuff."
@@ -352,6 +354,22 @@ Find the overlay for this POINT and delete it. Update the store."
   (interactive)
   (virtual-comment--paste-at (point-at-bol) (current-indentation)))
 
+(defun virtual-comment-load-store-maybe ()
+  "Get everything ready if necessary store, project and buffer."
+  ;; get project
+  (let* ((project-data (virtual-comment--get-project))
+         (count (virtual-comment-project-count project-data)))
+    ;; check if project-data needs initialization
+    (when (= count 0)
+      ;; not initialized yet. must update
+      ;; first load project file
+      (setf (virtual-comment-project-files project-data)
+            (virtual-comment--load-data-from-file (virtual-comment--get-saved-file))))
+    ;; increase ref counter
+    (cl-incf (virtual-comment-project-count project-data))
+    ;; get buffer data from project
+    ))
+
 (define-minor-mode virtual-comment-mode
   "This mode shows virtual commnents."
   :lighter "evc"
@@ -365,7 +383,7 @@ Find the overlay for this POINT and delete it. Update the store."
   (add-hook 'after-save-hook 'virtual-comment-save-in-buffer 0 t)
   (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
   ;; (setq virtual-comment-buffer-data nil)
-  (virtual-comment-load-into-buffer))
+  (virtual-comment-load-store-maybe))
 
 (defun virtual-comment-mode-disable ()
   "Run when `virtual-comment-mode' is off."
