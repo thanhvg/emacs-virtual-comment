@@ -138,3 +138,6 @@ it's a experiment
     (virtual-comment-buffer-overlays--add ov virtual-comment-buffer-overlays)))
 
 #+end_src
+
+* TODO a timer to update buffer data when idle
+tbd

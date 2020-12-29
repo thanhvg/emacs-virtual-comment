@@ -3,4 +3,7 @@
   "Hello world"
   (message "Hello world")
   (should t))
+
+;; virtual-comment--project
+;; virtual-comment--buffer-data
 ;;; virtual-comment-test.el ends here
