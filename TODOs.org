@@ -89,7 +89,7 @@ https://www.gnu.org/software/emacs/manual/html_node/elisp/Finding-Overlays.html
 for next and previous
 next-overlay-change pos
 previous-overlay-change pos
-* TODO merge comments when the lines they are on are joined into one line
+* CANCELED merge comments when the lines they are on are joined into one line
 * DONE next and previous comment
 * DONE indentation comment
 how to extract and make/separate comment from indentation
@@ -141,3 +141,14 @@ it's a experiment
 
 * TODO a timer to update buffer data when idle
 tbd
+* TODO clear all on mode disabled
+* mode to show commnents in buffer and projects
+- show list of commnents of current buffer
+- show list of files with comments of projects
+- jump to place
+
+based on outline mode or occur mode
+how about org mode, outline mode lacks some commands
+* how to open buffer with file path and point
+from helm-ag
+it's find-file 

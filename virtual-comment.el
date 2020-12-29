@@ -55,6 +55,9 @@
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
                (:copier nil))
+  "Store data of current buffer.
+FILENAME is file name from project root, it is not used.
+COMMENTS is list of (point . comment)."
   filename comments)
 
 (cl-defstruct (virtual-comment-store
@@ -70,7 +73,7 @@ which don't belong to a project. Slot projects is a list of
                (:constructor virtual-comment-project-create)
                (:copier nil))
   "Project store of comments.
-Slot files is list of `virtual-comment-buffer-data'
+Slot files is hashtable of file-name:`virtual-comment-buffer-data'
 Slot count is reference count."
   files count)
 
@@ -331,7 +334,7 @@ Decrease counter, check if should persist data."
                                                     (point-max)
                                                     #'next-overlay-change))
       (goto-char point)
-      ;; (progn (goto-char point) (message "%s thanh" point))
+    ;; (progn (goto-char point) (message "%s thanh" point))
     (message "No next comment found.")))
 
 (defun virtual-comment-previous ()
@@ -341,7 +344,7 @@ Decrease counter, check if should persist data."
                                                     (point-min)
                                                     #'previous-overlay-change))
       (goto-char point)
-      ;; (progn (goto-char point) (message "%s thanh" point))
+    ;; (progn (goto-char point) (message "%s thanh" point))
     (message "No previous comment found.")))
 
 (defun virtual-comment--make-comment-for-display (comment indent)
@@ -420,7 +423,7 @@ Find the overlay for this POINT and delete it. Update the store."
   (interactive)
   (virtual-comment--paste-at (point-at-bol) (current-indentation)))
 
-(defun virtual-comment-load-store-maybe ()
+(defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer."
   ;; get project
   (let* ((project-data (virtual-comment--get-project))
@@ -455,7 +458,7 @@ Find the overlay for this POINT and delete it. Update the store."
   ;; (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
   ;; (setq virtual-comment-buffer-data nil)
-  (virtual-comment-load-store-maybe))
+  (virtual-comment--init))
 
 (defun virtual-comment-mode-disable ()
   "Run when `virtual-comment-mode' is off."
@@ -465,6 +468,53 @@ Find the overlay for this POINT and delete it. Update the store."
   ;; (virtual-comment-clear)
   (kill-local-variable 'virtual-comment--buffer-data)
   (kill-local-variable 'virtual-comment--project))
+
+;; view job
+;; prefix virtual-comment-show
+(defun virtual-comment--print-comments (pair file-name root)
+  "Print out comments.
+from PAIR is (point . comment) for FILE-NAME of project
+ROOT."
+  ;; (message "%s" comments)
+  (let ((full-path (concat root file-name))
+        (point (car pair))
+        (comment (cdr pair)))
+    (insert (format "- %s\n"
+                    (propertize comment
+                                ;; 'face 'underline
+                                ;; 'font-lock-face 'underline
+                                'virtual-comment-point point
+                                'virtual-comment-file full-path)))))
+
+(defun virtual-comment--print (file-comments file-name root)
+  "Print out comments from FILE-COMMENTS for FILE-NAME of project ROOT.
+FILE-COMMENTS is list of (point . comment).
+
+Should produce:
+* file-name
+comment1
+comment2.
+
+Pressing enter on comment will go to comment."
+  (insert (format "* %s\n" file-name))
+  (mapc (lambda (it)
+          (virtual-comment--print-comments it file-name root))
+        file-comments))
+
+(defun virtual-comment--show (project-data root buffer)
+  "Print out an org buffer of project comments to BUFFER.
+PROJECT-DATA is `virtual-comment-project' struct.
+ROOT is project root."
+  (with-current-buffer buffer
+    (maphash
+     (lambda (key val)
+       (virtual-comment--print
+        (virtual-comment-buffer-data-comments val)
+        key
+        root))
+     (virtual-comment-project-files project-data))))
+
+(virtual-comment--show virtual-comment--project "~/git/emacs-virtual-comment" (get-buffer-create "*test*"))
 
 (provide 'virtual-comment)
 
