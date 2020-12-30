@@ -41,6 +41,11 @@
 (defvar-local virtual-comment--project nil
   "Project comment store.")
 
+(defvar-local virtual-comment--update-data-timer nil
+  "Local timer for `virtual-comment--update-data-async'.
+When this value is non-nil then there is a timer for
+`virtual-comment--update-data' to run in future.")
+
 (defcustom virtual-comment-face 'highlight
   "Face for annotations."
   :type 'face
@@ -51,8 +56,8 @@
   :type 'string
   :group 'virtual-comment)
 
-(defvar virtual-comment-yanked-overlay nil
-  "Ref of the overlay yanked.")
+(defvar virtual-comment-deleted-overlay nil
+  "Ref of the overlay deleted.")
 
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
@@ -165,7 +170,7 @@ If not found create it."
           ovs))
 
 (defun virtual-comment--update-data ()
-  "Update."
+  "Update buffer comment data."
   (let ((data (virtual-comment--get-buffer-data))
         (ovs (virtual-comment--get-buffer-overlays)))
     ;; update file name
@@ -173,6 +178,18 @@ If not found create it."
           (virtual-comment--get-buffer-file-name))
     (setf (virtual-comment-buffer-data-comments data)
           (virtual-comment--ovs-to-cmts ovs))))
+
+(defun virtual-comment--update-data-async ()
+  "Update buffer comment data when idle."
+  (unless virtual-comment--update-data-timer
+    (setq virtual-comment--update-data-timer
+          (run-with-idle-timer
+           5 ;; seconds
+           nil ;; no repeat
+           (lambda ()
+             (virtual-comment--update-data)
+             ;; done reset the flag
+             (setq virtual-comment--update-data-timer nil))))))
 
 (defun virtual-comment-get-evc-file ()
   "Return evc file path."
@@ -298,7 +315,7 @@ OV is overlay, IS-AFTER-CHANGE, BEGIN END and PRE-CHANGE are extra
 params. If there is already a ov comment on the line, the moved
 ov will be discarded and its comment will be added to the host
 comment."
-  (message "yay: ov:%s begin:%s end:%s indentation:%s" ov begin end (current-indentation))
+  ;; (message "yay: ov:%s begin:%s end:%s indentation:%s" ov begin end (current-indentation))
   (when is-after-change
     (let* ((point (point-at-bol))
            (comment (overlay-get ov 'virtual-comment))
@@ -324,6 +341,8 @@ With GETTER-FUNC until END-POINT."
 (defun virtual-comment--kill-buffer-hook-handler ()
   "On buffer about to be killed.
 Decrease counter, check if should persist data."
+  (when virtual-comment--update-data-timer
+    (cancel-timer virtual-comment--update-data-timer))
   (virtual-comment--update-data)
   (let ((data (virtual-comment--get-project)))
     (cl-decf (virtual-comment-project-count data))
@@ -389,45 +408,50 @@ Decrease counter, check if should persist data."
          (comment (virtual-comment--read-string
                    "Insert comment:"
                    org-comment))
-         ;; must get existing overlay when comment is not nill
+         ;; must get existing overlay when comment is non-nil
          (ov (if org-comment (virtual-comment--get-overlay-at point)
                (make-overlay point point))))
     (overlay-put ov 'virtual-comment comment)
     (overlay-put ov
                  'before-string
                  (virtual-comment--make-comment-for-display comment indent))
+
     ;; (unless org-comment
     ;;   (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
-    ))
 
-(defun virtual-comment--yank-comment-at (point)
+    (virtual-comment--update-data-async)))
+
+(defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
 Find the overlay for this POINT and delete it. Update the store."
   (when-let (ov (virtual-comment--get-overlay-at point))
-    (setq virtual-comment-yanked-overlay ov)
+    (setq virtual-comment-deleted-overlay ov)
     (delete-overlay ov)))
 
-(defun virtual-comment-yank ()
-  "Delete comments of this current line."
+(defun virtual-comment-delete ()
+  "Delete comments of this current line.
+The comment then can be pasted with `virtual-comment-paste'."
   (interactive)
   (let ((point (point-at-bol)))
-    (virtual-comment--yank-comment-at point)))
+    (virtual-comment--delete-comment-at point))
+  (virtual-comment--update-data-async))
 
 (defun virtual-comment--paste-at (point indent)
   "Paste comment at POINT and with INDENT."
-  (when virtual-comment-yanked-overlay
+  (when virtual-comment-deleted-overlay
     (let ((comment-for-display (virtual-comment--make-comment-for-display
-                                (overlay-get virtual-comment-yanked-overlay 'virtual-comment)
+                                (overlay-get virtual-comment-deleted-overlay 'virtual-comment)
                                 indent)))
-      (overlay-put virtual-comment-yanked-overlay 'before-string comment-for-display)
-      (move-overlay virtual-comment-yanked-overlay point point))))
+      (overlay-put virtual-comment-deleted-overlay 'before-string comment-for-display)
+      (move-overlay virtual-comment-deleted-overlay point point))))
 
 (defun virtual-comment-paste ()
   "Paste comment."
   (interactive)
-  (virtual-comment--paste-at (point-at-bol) (current-indentation)))
+  (virtual-comment--paste-at (point-at-bol) (current-indentation))
+  (virtual-comment--update-data-async))
 
 (defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer."
@@ -460,7 +484,7 @@ Find the overlay for this POINT and delete it. Update the store."
 
 (defun virtual-comment-mode-enable ()
   "Run when `virtual-comment-mode' is on."
-  (add-hook 'after-save-hook 'virtual-comment--update-data 0 t)
+  (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
   ;; (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
   ;; (setq virtual-comment-buffer-data nil)
@@ -468,7 +492,7 @@ Find the overlay for this POINT and delete it. Update the store."
 
 (defun virtual-comment-mode-disable ()
   "Run when `virtual-comment-mode' is off."
-  (remove-hook 'after-save-hook 'virtual-comment--update-data t)
+  (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
   ;; (remove-hook 'before-revert-hook 'virtual-comment-clear t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   ;; (virtual-comment-clear)
@@ -476,24 +500,21 @@ Find the overlay for this POINT and delete it. Update the store."
   (kill-local-variable 'virtual-comment--project))
 
 ;; view job
-;; prefix virtual-comment-show
 (defun virtual-comment-go ()
-  "Go to location of comment at point."
+  "Go to location of comment at point of view buffer."
   (interactive)
   (let ((active-point (get-text-property (point) 'virtual-comment-point))
         (file-name (get-text-property (point) 'virtual-comment-file)))
     (when (and active-point file-name)
       (find-file file-name)
-      (goto-char active-point)
-      (message "Must go to %s of %s" active-point file-name))))
+      (goto-char active-point))))
 
 (defvar virtual-comment-show-map
   ;; (setq virtual-comment-show-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'virtual-comment-go)
-    (define-key map (kbd "C-c C-s") 'virtual-comment-go)
     map)
-  "Kemap for show.")
+  "Keymap for show.")
 
 (defun virtual-comment--print-comments (pair file-name root)
   "Print out comments.
@@ -546,7 +567,6 @@ ROOT is project root."
     (goto-char (point-min))
     ;; go to node for file-name
     (when file-name
-      (message "searching for %s" (concat "* " file-name "\n"))
       (search-forward (concat "* " file-name "\n") nil t))
     (switch-to-buffer (current-buffer))))
 

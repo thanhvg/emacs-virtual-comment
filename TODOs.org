@@ -142,6 +142,14 @@ it's a experiment
 * TODO a timer to update buffer data when idle
 tbd
 run-with-idle-timer
+https://www.gnu.org/software/emacs/manual/html_node/elisp/Idle-Timers.html
+
+virtual-comment--update-async
+functions that needs to call this 
+yank
+make
+paste
+should we make it as a hook
 * TODO clear all on mode disabled
 * mode to show commnents in buffer and projects
 - show list of commnents of current buffer
@@ -159,3 +167,4 @@ it's find-file
 * keymap action on line
 http://ergoemacs.org/emacs/elisp_text_properties.html
 * TODO handle overlays when their point is out of range
+* TODO sort buffer data 
