@@ -31,14 +31,6 @@
 (require 'outline)
 (require 'simple)
 
-;; (defvar-local virtual-comment-buffer-data nil
-;;   "Buffer comments.
-;; Currently is a list of (point . comment). But could be a hash table.")
-
-(defvar virtual-comment-yanked-overlay nil
-  "Ref of the overlay yanked.")
-
-(defvar virtual-comment-default-file "~/.evc")
 
 (defvar-local virtual-comment--buffer-data nil
   "Buffer comment data.")
@@ -53,6 +45,14 @@
   "Face for annotations."
   :type 'face
   :group 'virtual-comment)
+
+(defcustom virtual-comment-default-file "~/.evc"
+  "Default file to save comments."
+  :type 'string
+  :group 'virtual-comment)
+
+(defvar virtual-comment-yanked-overlay nil
+  "Ref of the overlay yanked.")
 
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
@@ -100,16 +100,19 @@ When PROJECT-ID is nil return the default store."
             (puthash project-id
                      (virtual-comment-project-create :count 0 :files nil)
                      projects)))
-      ;; ok init the default store
+      ;; else get the default store
       (virtual-comment-store-default store))))
 
-;; TODO must handle nil when default is the project-data
 (defun virtual-comment--remove-project-in-store (project-id)
-  "Remove project data from store using PROJECT-ID as key."
-  (let* ((store (virtual-comment--get-store))
-         (projects (virtual-comment-store-projects store)))
-    (remhash project-id
-             projects)))
+  "Remove project data from store using PROJECT-ID as key.
+When PROJECT-ID is nil, the default slot of store is in action."
+  (let ((store (virtual-comment--get-store)))
+    (if project-id
+        (let ((projects (virtual-comment-store-projects store)))
+          (remhash project-id projects))
+      ;; else we reset the default slot
+      (setf (virtual-comment-store-default store)
+            (virtual-comment-project-create :count 0 :files nil)))))
 
 (defun virtual-comment--make-project-id (project-location)
   "Return project unique id form PROJECT-LOCATION."
