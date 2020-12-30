@@ -146,11 +146,12 @@ Return `virtual-comment--project'."
 (defun virtual-comment--get-buffer-data-in-project (file-name prj)
   "Get buffer data fro FILE-NAME from PRJ.
 If not found create it."
-  (if-let (data (gethash file-name (virtual-comment-project-files prj)))
-      data
-    (puthash file-name
-             (virtual-comment-buffer-data-create)
-             (virtual-comment-project-files prj))))
+  (when file-name
+    (if-let (data (gethash file-name (virtual-comment-project-files prj)))
+        data
+      (puthash file-name
+               (virtual-comment-buffer-data-create)
+               (virtual-comment-project-files prj)))))
 
 (defun virtual-comment--get-buffer-data ()
   "Get struct `virtual-comment--buffer-data' if nil then create it."
@@ -159,9 +160,12 @@ If not found create it."
     (let ((project-data (virtual-comment--get-project))
           (file-name (virtual-comment--get-buffer-file-name)))
       (setq
-       virtual-comment--buffer-data (virtual-comment--get-buffer-data-in-project
-                                     file-name
-                                     project-data)))))
+       virtual-comment--buffer-data
+       (if file-name
+           (virtual-comment--get-buffer-data-in-project
+            file-name
+            project-data)
+         (virtual-comment-buffer-data-create))))))
 
 (defun virtual-comment--ovs-to-cmts (ovs)
   "Maps overlay OVS list to list of (point . comment)."
