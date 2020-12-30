@@ -1,4 +1,14 @@
 #+startup:    content indent
+#+title: emacs-virtual-comment Virtual Comments for Emacs
+
+[[http://spacemacs.org][file:https://cdn.rawgit.com/syl20bnr/spacemacs/442d025779da2f62fc86c2082703697714db6514/assets/spacemacs-badge.svg]]
+
+* Intro
+This package provides a minore mode =virtual-comment= which allows showing virtual
+comments inside Emacs buffers. These comments don't belong to the buffer. They
+are saved in project root or a global file which can be viewed and searched. The
+file name is =.evc=.
+
 * test
 #+begin_src sh
 cask install

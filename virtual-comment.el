@@ -28,6 +28,8 @@
 (require 'cl-lib)
 (require 'project)
 (require 'subr-x)
+(require 'outline)
+(require 'simple)
 
 ;; (defvar-local virtual-comment-buffer-data nil
 ;;   "Buffer comments.
@@ -101,6 +103,7 @@ When PROJECT-ID is nil return the default store."
       ;; ok init the default store
       (virtual-comment-store-default store))))
 
+;; TODO must handle nil when default is the project-data
 (defun virtual-comment--remove-project-in-store (project-id)
   "Remove project data from store using PROJECT-ID as key."
   (let* ((store (virtual-comment--get-store))
@@ -471,6 +474,24 @@ Find the overlay for this POINT and delete it. Update the store."
 
 ;; view job
 ;; prefix virtual-comment-show
+(defun virtual-comment-go ()
+  "Go to location of comment at point."
+  (interactive)
+  (let ((active-point (get-text-property (point) 'virtual-comment-point))
+        (file-name (get-text-property (point) 'virtual-comment-file)))
+    (when (and active-point file-name)
+      (find-file file-name)
+      (goto-char active-point)
+      (message "Must go to %s of %s" active-point file-name))))
+
+(defvar virtual-comment-show-map
+  ;; (setq virtual-comment-show-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") 'virtual-comment-go)
+    (define-key map (kbd "C-c C-s") 'virtual-comment-go)
+    map)
+  "Kemap for show.")
+
 (defun virtual-comment--print-comments (pair file-name root)
   "Print out comments.
 from PAIR is (point . comment) for FILE-NAME of project
@@ -479,12 +500,14 @@ ROOT."
   (let ((full-path (concat root file-name))
         (point (car pair))
         (comment (cdr pair)))
-    (insert (format "- %s\n"
+    (insert (format "%s\n\n"
                     (propertize comment
-                                ;; 'face 'underline
+                                ;; 'face 'highlight
                                 ;; 'font-lock-face 'underline
+                                'font-lock-face 'highlight
                                 'virtual-comment-point point
-                                'virtual-comment-file full-path)))))
+                                'virtual-comment-file full-path
+                                'keymap virtual-comment-show-map)))))
 
 (defun virtual-comment--print (file-comments file-name root)
   "Print out comments from FILE-COMMENTS for FILE-NAME of project ROOT.
@@ -501,21 +524,39 @@ Pressing enter on comment will go to comment."
           (virtual-comment--print-comments it file-name root))
         file-comments))
 
-(defun virtual-comment--show (project-data root buffer)
+(defun virtual-comment--show (project-data root buffer &optional file-name)
   "Print out an org buffer of project comments to BUFFER.
 PROJECT-DATA is `virtual-comment-project' struct.
 ROOT is project root."
   (with-current-buffer buffer
+    (read-only-mode -1)
+    (erase-buffer)
     (maphash
      (lambda (key val)
        (virtual-comment--print
         (virtual-comment-buffer-data-comments val)
         key
         root))
-     (virtual-comment-project-files project-data))))
+     (virtual-comment-project-files project-data))
+    (read-only-mode)
+    (outline-mode)
+    (goto-char (point-min))
+    ;; go to node for file-name
+    (when file-name
+      (message "searching for %s" (concat "* " file-name "\n"))
+      (search-forward (concat "* " file-name "\n") nil t))
+    (switch-to-buffer (current-buffer))))
 
-(virtual-comment--show virtual-comment--project "~/git/emacs-virtual-comment" (get-buffer-create "*test*"))
+(defun virtual-comment-show ()
+  "Show comments for this file and its project."
+  (interactive)
+  (let ((file-name (virtual-comment--get-buffer-file-name))
+        (root (cdr (project-current))))
+    (virtual-comment--show virtual-comment--project
+                           root
+                           (get-buffer-create
+                            (format "*%s*" (if root root "default")))
+                           file-name)))
 
 (provide 'virtual-comment)
-
 ;;; virtual-comment.el ends here
