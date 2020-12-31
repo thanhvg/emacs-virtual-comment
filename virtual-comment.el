@@ -282,12 +282,12 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-              (overlays-in point point)))
+            (overlays-in point point)))
 
 (defun virtual-comment--get-buffer-overlays ()
   "Get all overlay comment."
   (seq-filter #'virtual-comment--overlayp
-                (overlays-in (point-min) (point-max))))
+              (overlays-in (point-min) (point-max))))
 
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
@@ -306,7 +306,7 @@ prompt"
   "Re-align overlays if necessary."
   (interactive)
   (mapc #'virtual-comment--repair-overlay-maybe
-          (virtual-comment--get-buffer-overlays)))
+        (virtual-comment--get-buffer-overlays)))
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment string at POINT."
@@ -462,7 +462,7 @@ The comment then can be pasted with `virtual-comment-paste'."
   (interactive)
   (virtual-comment--paste-at (point-at-bol) (current-indentation))
   (when virtual-comment-mode
-   (virtual-comment--update-data-async)))
+    (virtual-comment--update-data-async)))
 
 (defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer.
@@ -486,8 +486,8 @@ run (virtual-comment-mode) again this function won't do anything."
       (cl-incf (virtual-comment-project-count project-data))
       ;; get buffer data from project and make overlay
       (mapc #'virtual-comment--make
-              (virtual-comment-buffer-data-comments
-               (virtual-comment--get-buffer-data))))
+            (virtual-comment-buffer-data-comments
+             (virtual-comment--get-buffer-data))))
     (setq virtual-comment--is-initialized t)))
 
 (define-minor-mode virtual-comment-mode
@@ -559,11 +559,13 @@ Should produce:
 comment1
 comment2.
 
+If no comments, print nothing
 Pressing enter on comment will go to comment."
-  (insert (format "* %s\n" file-name))
-  (mapc (lambda (it)
-          (virtual-comment--print-comments it file-name root))
-        file-comments))
+  (when (> (length file-comments) 0)
+    (insert (format "* %s\n" file-name))
+    (mapc (lambda (it)
+            (virtual-comment--print-comments it file-name root))
+          file-comments)))
 
 (defun virtual-comment--show (project-data root buffer &optional file-name)
   "Print out an org buffer of project comments to BUFFER.
