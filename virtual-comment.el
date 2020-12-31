@@ -170,6 +170,11 @@ If not found create it."
             project-data)
          (virtual-comment-buffer-data-create))))))
 
+(defun virtual-comment--buffer-data-empty-p (buffer-data)
+  "Tell if BUFFER-DATA (`virtual-comment-buffer-data') is empty.
+There are two slots but for now we only care about slot comments."
+  (not (virtual-comment-buffer-data-comments buffer-data)))
+
 (defun virtual-comment--ovs-to-cmts (ovs)
   "Maps overlay OVS list to list of (point . comment)."
   (mapcar (lambda (ov)
@@ -361,8 +366,16 @@ Decrease counter, check if should persist data."
     (cancel-timer virtual-comment--update-data-timer)
     (setq virtual-comment--update-data-timer nil)
     (virtual-comment--update-data))
-  (let ((data (virtual-comment--get-project)))
+  (let ((data (virtual-comment--get-project))
+        (buffer-data (virtual-comment--get-buffer-data)))
+    ;; if buffer data is nothing then remove it from project data
+    (when (virtual-comment--buffer-data-empty-p buffer-data)
+      (remhash
+       (virtual-comment--get-buffer-file-name)
+       (virtual-comment-project-files data)))
+    ;; decrease ref count
     (cl-decf (virtual-comment-project-count data))
+    ;; persistence maybe
     (when (= 0 (virtual-comment-project-count data))
       (message "Persisting virtual comments...")
       (virtual-comment-dump-data)
