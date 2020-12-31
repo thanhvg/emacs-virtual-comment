@@ -314,6 +314,7 @@ When SHOULD-SORT is non-nil sort by point."
                     (current-indentation)))
       (move-overlay ov (point-at-bol) (point-at-bol)))))
 
+;;;###autoload
 (defun virtual-comment-realign ()
   "Realign overlays if necessary."
   (interactive)
@@ -382,6 +383,7 @@ Decrease counter, check if should persist data."
       ;; remove project files from store
       (virtual-comment--remove-project))))
 
+;;;###autoload
 (defun virtual-comment-next ()
   "Go to next/below comment."
   (interactive)
@@ -392,6 +394,7 @@ Decrease counter, check if should persist data."
     ;; (progn (goto-char point) (message "%s thanh" point))
     (message "No next comment found.")))
 
+;;;###autoload
 (defun virtual-comment-previous ()
   "Go to previous/above comment."
   (interactive)
@@ -429,6 +432,7 @@ Decrease counter, check if should persist data."
                       comment
                       indent))))))
 
+;;;###autoload
 (defun virtual-comment-make ()
   "Add or edit comment at current line."
   (interactive)
@@ -459,6 +463,7 @@ Find the overlay for this POINT and delete it. Update the store."
     (setq virtual-comment-deleted-overlay ov)
     (delete-overlay ov)))
 
+;;;###autoload
 (defun virtual-comment-delete ()
   "Delete comments of this current line.
 The comment then can be pasted with `virtual-comment-paste'."
@@ -476,6 +481,7 @@ The comment then can be pasted with `virtual-comment-paste'."
       (overlay-put virtual-comment-deleted-overlay 'before-string comment-for-display)
       (move-overlay virtual-comment-deleted-overlay point point))))
 
+;;;###autoload
 (defun virtual-comment-paste ()
   "Paste comment."
   (interactive)
@@ -487,6 +493,7 @@ The comment then can be pasted with `virtual-comment-paste'."
   (mapc #'delete-overlay
         (virtual-comment--get-buffer-overlays)))
 
+;;;###autoload
 (define-minor-mode virtual-comment-mode
   "This mode shows virtual commnents."
   :lighter "evc"
@@ -546,6 +553,7 @@ run (virtual-comment-mode) again this function won't do anything."
   (kill-local-variable 'virtual-comment--project))
 
 ;; view job
+;;;###autoload
 (defun virtual-comment-go ()
   "Go to location of comment at point of view buffer."
   (interactive)
@@ -602,6 +610,7 @@ Pressing enter on comment will go to comment."
     (define-key map "q" 'quit-window)
     map))
 
+;;;###autoload
 (define-derived-mode virtual-comment-show-mode outline-mode "evcs"
   "Major mode to view `virutal-comment' comments."
   (setq buffer-read-only t))
@@ -628,6 +637,7 @@ ROOT is project root."
     ;; (local-set-key (kbd "q") 'quit-window)
     (switch-to-buffer (current-buffer))))
 
+;;;###autoload
 (defun virtual-comment-show ()
   "Show comments for this file and its project."
   (interactive)
