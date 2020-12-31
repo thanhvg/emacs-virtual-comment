@@ -171,6 +171,6 @@ http://ergoemacs.org/emacs/elisp_text_properties.html
 * TODO BUG file-name is nil and put in into project
 how come? was that because of async?
 probably the async get runs on and buffers that it doesn't belong to
-* TODO hook on save should only run when there is a time scheduled
+* DONE hook on save should only run when there is a time scheduled
 timer flag can tell if the update should do or not
 * TODO some persistent and store access should only work when mode is on

@@ -350,8 +350,8 @@ With GETTER-FUNC until END-POINT."
   "On buffer about to be killed.
 Decrease counter, check if should persist data."
   (when virtual-comment--update-data-timer
-    (cancel-timer virtual-comment--update-data-timer))
-  (virtual-comment--update-data)
+    (cancel-timer virtual-comment--update-data-timer)
+    (virtual-comment--update-data))
   (let ((data (virtual-comment--get-project)))
     (cl-decf (virtual-comment-project-count data))
     (when (= 0 (virtual-comment-project-count data))
