@@ -429,7 +429,8 @@ Decrease counter, check if should persist data."
     ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
 
-    (virtual-comment--update-data-async)))
+    (when virtual-comment-mode
+      (virtual-comment--update-data-async))))
 
 (defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
@@ -444,7 +445,8 @@ The comment then can be pasted with `virtual-comment-paste'."
   (interactive)
   (let ((point (point-at-bol)))
     (virtual-comment--delete-comment-at point))
-  (virtual-comment--update-data-async))
+  (when virtual-comment-mode
+    (virtual-comment--update-data-async)))
 
 (defun virtual-comment--paste-at (point indent)
   "Paste comment at POINT and with INDENT."
@@ -459,7 +461,8 @@ The comment then can be pasted with `virtual-comment-paste'."
   "Paste comment."
   (interactive)
   (virtual-comment--paste-at (point-at-bol) (current-indentation))
-  (virtual-comment--update-data-async))
+  (when virtual-comment-mode
+   (virtual-comment--update-data-async)))
 
 (defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer.
