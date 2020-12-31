@@ -167,18 +167,32 @@ it's find-file
 * keymap action on line
 http://ergoemacs.org/emacs/elisp_text_properties.html
 * TODO handle overlays when their point is out of range
-* TODO sort buffer data 
+* DONE sort buffer data 
 * DONE BUG file-name is nil and put in into project
 how come? was that because of async?
 probably the async get runs on and buffers that it doesn't belong to
 * DONE hook on save should only run when there is a time scheduled
 timer flag can tell if the update should do or not
-* TODO some persistent and store access should only work when mode is on
+* DONE some persistent and store access should only work when mode is on
 delete
 make
 paste
+align
 * TODO quit-window command for show 
+make a show mode so its keybindings can be reset by evil
 * enable
 #+begin_src elisp
 (add-hook 'find-file-hook 'virtual-comment-mode)
+
+(spacemacs/declare-prefix "cv" "virtual-comments")
+(spacemacs/set-leader-keys
+  "cvv" #'virtual-comment-make
+  "cvd" #'virtual-comment-delete
+  "cvs" #'virtual-comment-show
+  "cvj" #'virtual-comment-next
+  "cvn" #'virtual-comment-next
+  "cvN" #'virtual-comment-previous
+  "cvk" #'virtual-comment-previous
+  "cvp" #'virtual-comment-paste
+  "cvr" #'virtual-comment-realign)
 #+end_src

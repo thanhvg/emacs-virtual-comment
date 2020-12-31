@@ -87,6 +87,7 @@ Slot files is hashtable of file-name:`virtual-comment-buffer-data'
 Slot count is reference count."
   files count)
 
+
 (defun virtual-comment--get-store ()
   "Get comment store.
 If nil create it and create a hash table to :projects slot."
@@ -178,7 +179,7 @@ If not found create it."
 (defun virtual-comment--update-data ()
   "Update buffer comment data."
   (let ((data (virtual-comment--get-buffer-data))
-        (ovs (virtual-comment--get-buffer-overlays)))
+        (ovs (virtual-comment--get-buffer-overlays t)))
     ;; update file name
     (setf (virtual-comment-buffer-data-filename data)
           (virtual-comment--get-buffer-file-name))
@@ -284,10 +285,16 @@ prompt"
   (seq-find #'virtual-comment--overlayp
             (overlays-in point point)))
 
-(defun virtual-comment--get-buffer-overlays ()
-  "Get all overlay comment."
-  (seq-filter #'virtual-comment--overlayp
-              (overlays-in (point-min) (point-max))))
+(defun virtual-comment--get-buffer-overlays (&optional should-sort)
+  "Get all overlay comment.
+When SHOULD-SORT is non-nil sort by point."
+  (let ((ovs (seq-filter #'virtual-comment--overlayp
+                         (overlays-in (point-min) (point-max)))))
+    (if should-sort
+        (sort ovs
+              (lambda (first second)
+                (< (overlay-start first) (overlay-start second))))
+      ovs)))
 
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
@@ -302,11 +309,12 @@ prompt"
                     (current-indentation)))
       (move-overlay ov (point-at-bol) (point-at-bol)))))
 
-(defun virtual-comment-repair-overlays-maybe ()
-  "Re-align overlays if necessary."
+(defun virtual-comment-realign ()
+  "Realign overlays if necessary."
   (interactive)
   (mapc #'virtual-comment--repair-overlay-maybe
-        (virtual-comment--get-buffer-overlays)))
+        (virtual-comment--get-buffer-overlays))
+  (virtual-comment--update-data-async-maybe))
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment string at POINT."
@@ -351,6 +359,7 @@ With GETTER-FUNC until END-POINT."
 Decrease counter, check if should persist data."
   (when virtual-comment--update-data-timer
     (cancel-timer virtual-comment--update-data-timer)
+    (setq virtual-comment--update-data-timer nil)
     (virtual-comment--update-data))
   (let ((data (virtual-comment--get-project)))
     (cl-decf (virtual-comment-project-count data))
@@ -428,9 +437,7 @@ Decrease counter, check if should persist data."
     ;;   (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
-
-    (when virtual-comment-mode
-      (virtual-comment--update-data-async))))
+    (virtual-comment--update-data-async-maybe)))
 
 (defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
@@ -445,8 +452,7 @@ The comment then can be pasted with `virtual-comment-paste'."
   (interactive)
   (let ((point (point-at-bol)))
     (virtual-comment--delete-comment-at point))
-  (when virtual-comment-mode
-    (virtual-comment--update-data-async)))
+  (virtual-comment--update-data-async-maybe))
 
 (defun virtual-comment--paste-at (point indent)
   "Paste comment at POINT and with INDENT."
@@ -461,6 +467,23 @@ The comment then can be pasted with `virtual-comment-paste'."
   "Paste comment."
   (interactive)
   (virtual-comment--paste-at (point-at-bol) (current-indentation))
+  (virtual-comment--update-data-async-maybe))
+
+(defun virtual-comment--clear ()
+  "Clear all overlays in current buffer."
+  (mapc #'delete-overlay
+        (virtual-comment--get-buffer-overlays)))
+
+(define-minor-mode virtual-comment-mode
+  "This mode shows virtual commnents."
+  :lighter "evc"
+  :keymap (make-sparse-keymap)
+  (if virtual-comment-mode
+      (virtual-comment-mode-enable)
+    (virtual-comment-mode-disable)))
+
+(defun virtual-comment--update-data-async-maybe ()
+  "Do update only when mode is active."
   (when virtual-comment-mode
     (virtual-comment--update-data-async)))
 
@@ -490,14 +513,6 @@ run (virtual-comment-mode) again this function won't do anything."
              (virtual-comment--get-buffer-data))))
     (setq virtual-comment--is-initialized t)))
 
-(define-minor-mode virtual-comment-mode
-  "This mode shows virtual commnents."
-  :lighter "evc"
-  :keymap (make-sparse-keymap)
-  (if virtual-comment-mode
-      (virtual-comment-mode-enable)
-    (virtual-comment-mode-disable)))
-
 (defun virtual-comment-mode-enable ()
   "Run when `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
@@ -511,7 +526,8 @@ run (virtual-comment-mode) again this function won't do anything."
   (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
   ;; (remove-hook 'before-revert-hook 'virtual-comment-clear t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
-  ;; (virtual-comment-clear)
+  (virtual-comment--kill-buffer-hook-handler)
+  (virtual-comment--clear)
   (kill-local-variable 'virtual-comment--is-initialized)
   (kill-local-variable 'virtual-comment--buffer-data)
   (kill-local-variable 'virtual-comment--project))
@@ -587,6 +603,7 @@ ROOT is project root."
     ;; go to node for file-name
     (when file-name
       (search-forward (concat "* " file-name "\n") nil t))
+    (local-set-key (kbd "q") 'quit-window)
     (switch-to-buffer (current-buffer))))
 
 (defun virtual-comment-show ()
