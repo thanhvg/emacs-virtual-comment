@@ -149,8 +149,9 @@ functions that needs to call this
 yank
 make
 paste
+realign
 should we make it as a hook
-* TODO clear all on mode disabled
+* DONE clear all on mode disabled
 * mode to show commnents in buffer and projects
 - show list of commnents of current buffer
 - show list of files with comments of projects
@@ -178,11 +179,19 @@ delete
 make
 paste
 align
-* TODO quit-window command for show 
+* DONE quit-window command for show 
 make a show mode so its keybindings can be reset by evil
+local-set-key applies everywhere to major mode anywhere, not recommended
+it applies to outline mode, it will apply to org mode because org mode
+is based on outline mode.
+
 * enable
 #+begin_src elisp
 (add-hook 'find-file-hook 'virtual-comment-mode)
+(add-hook 'virtual-comment-show-mode 'outline-minor-mode)
+
+(evilified-state-evilify virtual-comment-show-mode virtual-comment-show-mode-map
+  "q" quit-window)
 
 (spacemacs/declare-prefix "cv" "virtual-comments")
 (spacemacs/set-leader-keys
@@ -196,3 +205,4 @@ make a show mode so its keybindings can be reset by evil
   "cvp" #'virtual-comment-paste
   "cvr" #'virtual-comment-realign)
 #+end_src
+

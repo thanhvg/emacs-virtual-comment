@@ -596,27 +596,36 @@ Pressing enter on comment will go to comment."
             (virtual-comment--print-comments it file-name root))
           file-comments)))
 
+;; (setq virtual-comment-show-mode-map
+(defvar virtual-comment-show-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "q" 'quit-window)
+    map))
+
+(define-derived-mode virtual-comment-show-mode outline-mode "evcs"
+  "Major mode to view `virutal-comment' comments."
+  (setq buffer-read-only t))
+
 (defun virtual-comment--show (project-data root buffer &optional file-name)
   "Print out an org buffer of project comments to BUFFER.
 PROJECT-DATA is `virtual-comment-project' struct.
 ROOT is project root."
   (with-current-buffer buffer
-    (read-only-mode -1)
-    (erase-buffer)
-    (maphash
-     (lambda (key val)
-       (virtual-comment--print
-        (virtual-comment-buffer-data-comments val)
-        key
-        root))
-     (virtual-comment-project-files project-data))
-    (read-only-mode)
-    (outline-mode)
-    (goto-char (point-min))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (maphash
+       (lambda (key val)
+         (virtual-comment--print
+          (virtual-comment-buffer-data-comments val)
+          key
+          root))
+       (virtual-comment-project-files project-data))
+      (virtual-comment-show-mode)
+      (goto-char (point-min)))
     ;; go to node for file-name
     (when file-name
       (search-forward (concat "* " file-name "\n") nil t))
-    (local-set-key (kbd "q") 'quit-window)
+    ;; (local-set-key (kbd "q") 'quit-window)
     (switch-to-buffer (current-buffer))))
 
 (defun virtual-comment-show ()
