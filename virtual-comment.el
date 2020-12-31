@@ -41,6 +41,9 @@
 (defvar-local virtual-comment--project nil
   "Project comment store.")
 
+(defvar-local virtual-comment--is-initialized nil
+  "Flag to tell if `virtual-comment--init' has already run.")
+
 (defvar-local virtual-comment--update-data-timer nil
   "Local timer for `virtual-comment--update-data-async'.
 When this value is non-nil then there is a timer for
@@ -146,12 +149,11 @@ Return `virtual-comment--project'."
 (defun virtual-comment--get-buffer-data-in-project (file-name prj)
   "Get buffer data fro FILE-NAME from PRJ.
 If not found create it."
-  (when file-name
-    (if-let (data (gethash file-name (virtual-comment-project-files prj)))
-        data
-      (puthash file-name
-               (virtual-comment-buffer-data-create)
-               (virtual-comment-project-files prj)))))
+  (if-let (data (gethash file-name (virtual-comment-project-files prj)))
+      data
+    (puthash file-name
+             (virtual-comment-buffer-data-create)
+             (virtual-comment-project-files prj))))
 
 (defun virtual-comment--get-buffer-data ()
   "Get struct `virtual-comment--buffer-data' if nil then create it."
@@ -190,10 +192,12 @@ If not found create it."
           (run-with-idle-timer
            5 ;; seconds
            nil ;; no repeat
-           (lambda ()
-             (virtual-comment--update-data)
-             ;; done reset the flag
-             (setq virtual-comment--update-data-timer nil))))))
+           (lambda (buff)
+             (with-current-buffer buff
+               (virtual-comment--update-data)
+               ;; done reset the flag
+               (setq virtual-comment--update-data-timer nil)))
+           (current-buffer)))))
 
 (defun virtual-comment-get-evc-file ()
   "Return evc file path."
@@ -278,12 +282,12 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-            (overlays-in point point)))
+              (overlays-in point point)))
 
 (defun virtual-comment--get-buffer-overlays ()
   "Get all overlay comment."
   (seq-filter #'virtual-comment--overlayp
-              (overlays-in (point-min) (point-max))))
+                (overlays-in (point-min) (point-max))))
 
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
@@ -302,7 +306,7 @@ prompt"
   "Re-align overlays if necessary."
   (interactive)
   (mapc #'virtual-comment--repair-overlay-maybe
-        (virtual-comment--get-buffer-overlays)))
+          (virtual-comment--get-buffer-overlays)))
 
 (defun virtual-comment--get-comment-at (point)
   "Return comment string at POINT."
@@ -458,25 +462,30 @@ The comment then can be pasted with `virtual-comment-paste'."
   (virtual-comment--update-data-async))
 
 (defun virtual-comment--init ()
-  "Get everything ready if necessary store, project and buffer."
+  "Get everything ready if necessary store, project and buffer.
+This function should only run once when mode is active. That is
+after `virtual-comment-mode' is enabled in buffer, if you
+run (virtual-comment-mode) again this function won't do anything."
   ;; get project
-  (let* ((project-data (virtual-comment--get-project))
-         (count (virtual-comment-project-count project-data)))
-    ;; check if project-data needs initialization
-    (when (= count 0)
-      ;; not initialized yet. must update
-      ;; first load project file
-      (setf (virtual-comment-project-files project-data)
-            (if-let (my-data
-                     (virtual-comment--load-data-from-file (virtual-comment--get-saved-file)))
-                my-data
-              (make-hash-table :test 'equal))))
-    ;; increase ref counter
-    (cl-incf (virtual-comment-project-count project-data))
-    ;; get buffer data from project and make overlay
-    (mapc #'virtual-comment--make
-          (virtual-comment-buffer-data-comments
-           (virtual-comment--get-buffer-data)))))
+  (unless virtual-comment--is-initialized
+    (let* ((project-data (virtual-comment--get-project))
+           (count (virtual-comment-project-count project-data)))
+      ;; check if project-data needs initialization
+      (when (= count 0)
+        ;; not initialized yet. must update
+        ;; first load project file
+        (setf (virtual-comment-project-files project-data)
+              (if-let (my-data
+                       (virtual-comment--load-data-from-file (virtual-comment--get-saved-file)))
+                  my-data
+                (make-hash-table :test 'equal))))
+      ;; increase ref counter
+      (cl-incf (virtual-comment-project-count project-data))
+      ;; get buffer data from project and make overlay
+      (mapc #'virtual-comment--make
+              (virtual-comment-buffer-data-comments
+               (virtual-comment--get-buffer-data))))
+    (setq virtual-comment--is-initialized t)))
 
 (define-minor-mode virtual-comment-mode
   "This mode shows virtual commnents."
@@ -500,6 +509,7 @@ The comment then can be pasted with `virtual-comment-paste'."
   ;; (remove-hook 'before-revert-hook 'virtual-comment-clear t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   ;; (virtual-comment-clear)
+  (kill-local-variable 'virtual-comment--is-initialized)
   (kill-local-variable 'virtual-comment--buffer-data)
   (kill-local-variable 'virtual-comment--project))
 
