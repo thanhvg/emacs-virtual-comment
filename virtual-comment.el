@@ -373,17 +373,12 @@ When SHOULD-SORT is non-nil sort by point."
   (when-let (ov (virtual-comment--get-overlay-at point))
     (overlay-get ov 'virtual-comment)))
 
-(defun virtual-comment--insert-hook-handler (ov
-                                             is-after-change
-                                             begin
-                                             end
-                                             &optional pre-change)
+(defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
   "Move overlay back to the front.
-OV is overlay, IS-AFTER-CHANGE, BEGIN END and PRE-CHANGE are extra
+OV is overlay, IS-AFTER-CHANGE, _ are extra
 params. If there is already a ov comment on the line, the moved
 ov will be discarded and its comment will be added to the host
 comment."
-  ;; (message "yay: ov:%s begin:%s end:%s indentation:%s" ov begin end (current-indentation))
   (when is-after-change
     (let* ((point (point-at-bol))
            (comment (overlay-get ov 'virtual-comment))
@@ -437,7 +432,6 @@ Decrease counter, check if should persist data."
                                                     (point-max)
                                                     #'next-overlay-change))
       (goto-char point)
-    ;; (progn (goto-char point) (message "%s thanh" point))
     (message "No next comment found.")))
 
 ;;;###autoload
@@ -448,7 +442,6 @@ Decrease counter, check if should persist data."
                                                     (point-min)
                                                     #'previous-overlay-change))
       (goto-char point)
-    ;; (progn (goto-char point) (message "%s thanh" point))
     (message "No previous comment found.")))
 
 (defun virtual-comment--make-comment-for-display (comment indent)
