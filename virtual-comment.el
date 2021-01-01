@@ -1,8 +1,8 @@
-;;; virtual-comment.el --- Virtual Comments
+;;; virtual-comment.el --- Virtual Comments    -*- lexical-binding: t; -*-
 
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
-;; Package-Requires: ((emacs "27.1"))
+;; Package-Requires: ((emacs "26.1"))
 ;; Version: 0.0.1
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -31,7 +31,7 @@
 ;; and has the same indentation. The virtual comment can be single line or
 ;; multiline. Each line can have one comment.
 ;; 
-;; * Install 
+;; * Install
 ;; Spacemacs layer:
 ;; https://github.com/thanhvg/spacemacs-eos
 ;; 
@@ -556,7 +556,7 @@ The comment then can be pasted with `virtual-comment-paste'."
 (defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer.
 This function should only run once when mode is active. That is
-after `virtual-comment-mode' is enabled in buffer, if you
+after variable `virtual-comment-mode' is enabled in buffer, if you
 run (virtual-comment-mode) again this function won't do anything."
   ;; get project
   (unless virtual-comment--is-initialized
@@ -580,7 +580,7 @@ run (virtual-comment-mode) again this function won't do anything."
     (setq virtual-comment--is-initialized t)))
 
 (defun virtual-comment-mode-enable ()
-  "Run when `virtual-comment-mode' is on."
+  "Run when variable `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
   ;; (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
@@ -588,7 +588,7 @@ run (virtual-comment-mode) again this function won't do anything."
   (virtual-comment--init))
 
 (defun virtual-comment-mode-disable ()
-  "Run when `virtual-comment-mode' is off."
+  "Run when variable `virtual-comment-mode' is off."
   (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
   ;; (remove-hook 'before-revert-hook 'virtual-comment-clear t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
