@@ -19,10 +19,51 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;; FIXME
-;; Abbrevations:
-;; cmt: comment
-;; ov: overlay
+;; * Intro
+;;
+;; This package allows adding virtual comments to files in buffers. These
+;; comments don't belong to the files so they don't. They are saved in project
+;; root or a global file which can be viewed and searched. The file name is
+;; .evc.
+;; 
+;; * Virtual comments
+;; A virtual comment is an overlay and it is added above the line it comments on
+;; and has the same indentation. The virtual comment can be single line or
+;; multiline. Each line can have one comment.
+;; 
+;; * Install 
+;; Spacemacs layer:
+;; https://github.com/thanhvg/spacemacs-eos
+;; 
+;; Vanilla
+;; (require 'virtual-comment)
+;; (add-hook 'find-file-hook 'virtual-comment-mode)
+;; 
+;; * Commands
+;; - virtual-comment-make: create or edit a comment at current line
+;; - virtual-comment-next: go to next comment in buffer
+;; - virtual-comment-previous: go to previous comment in buffer
+;; - virtual-comment-delete: remove the current comment
+;; - virtual-comment-paste: paste the last removed comment to current line
+;; - virtual-comment-realign: realign the comments if they are misplaced
+;; 
+;; - virtual-comment-show: show all comments of current project in a derived mode
+;; from outline-mode, press enter on a comment will call virtual-comment-go to go
+;; to the location of comment.
+;; 
+;; There are no default bindings at all for these commands.
+;; 
+;; * Remarks
+;; It's very hard to manage overlays. So this mode should be use in a sensible way.
+;; Only comments of files can be persisted.
+;; 
+;; * Test
+;; cask install
+;; cask exec ert-runner
+;;
+;; * Other similar packages and inspirations
+;; https://github.com/blue0513/phantom-inline-comment
+;; https://www.emacswiki.org/emacs/InPlaceAnnotations
 
 ;;; Code:
 (require 'cl-lib)
@@ -48,6 +89,11 @@
   "Local timer for `virtual-comment--update-data-async'.
 When this value is non-nil then there is a timer for
 `virtual-comment--update-data' to run in future.")
+
+(defcustom virtual-comment-idle-time 3
+  "Number of seconds after Emacs is idle to run a scheduled update."
+  :type 'number
+  :group 'virtual-comment)
 
 (defcustom virtual-comment-face 'highlight
   "Face for annotations."
@@ -196,7 +242,7 @@ There are two slots but for now we only care about slot comments."
   (unless virtual-comment--update-data-timer
     (setq virtual-comment--update-data-timer
           (run-with-idle-timer
-           5 ;; seconds
+           virtual-comment-idle-time
            nil ;; no repeat
            (lambda (buff)
              (with-current-buffer buff
@@ -378,7 +424,7 @@ Decrease counter, check if should persist data."
     (cl-decf (virtual-comment-project-count data))
     ;; persistence maybe
     (when (= 0 (virtual-comment-project-count data))
-      (message "Persisting virtual comments...")
+      (message "virtual-comment: persisting virtual comments...")
       (virtual-comment-dump-data)
       ;; remove project files from store
       (virtual-comment--remove-project))))

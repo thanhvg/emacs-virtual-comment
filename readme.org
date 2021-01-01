@@ -1,16 +1,54 @@
 #+startup:    content indent
-#+title: emacs-virtual-comment Virtual Comments for Emacs
+#+title: Emacs Virtual Comments
 
 [[http://spacemacs.org][file:https://cdn.rawgit.com/syl20bnr/spacemacs/442d025779da2f62fc86c2082703697714db6514/assets/spacemacs-badge.svg]]
 
 * Intro
-This package provides a minore mode =virtual-comment= which allows showing virtual
-comments inside Emacs buffers. These comments don't belong to the buffer. They
-are saved in project root or a global file which can be viewed and searched. The
-file name is =.evc=.
+This package allows adding virtual comments to files in buffers. These comments
+don't belong to the files so they don't. They are saved in project root or a
+global file which can be viewed and searched. The file name is =.evc=.
 
-* test
+* Demo
+[[file:media/screencast.gif]]
+
+* Virtual comments
+A virtual comment is an overlay and it is added above the line it comments on
+and has the same indentation. The virtual comment can be single line or
+multiline. Each line can have one comment.
+
+* Install 
+Spacemacs layer:
+https://github.com/thanhvg/spacemacs-eos
+
+Vanilla
+#+begin_src
+(require 'virtual-comment)
+(add-hook 'find-file-hook 'virtual-comment-mode)
+#+end_src
+
+* Commands
+- =virtual-comment-make=: create or edit a comment at current line
+- =virtual-comment-next=: go to next comment in buffer
+- =virtual-comment-previous=: go to previous comment in buffer
+- =virtual-comment-delete=: remove the current comment
+- =virtual-comment-paste=: paste the last removed comment to current line
+- =virtual-comment-realign=: realign the comments if they are misplaced
+
+- =virtual-comment-show=: show all comments of current project in a derived mode
+from =outline-mode=, press enter on a comment will call =virtual-comment-go= to go
+to the location of comment.
+
+There are no default bindings at all for these commands.
+
+* Remarks
+It's very hard to manage overlays. So this mode should be use in a sensible way.
+Only comments of files can be persisted.
+
+* Test
 #+begin_src sh
 cask install
 cask exec ert-runner
 #+end_src
+* Other similar packages and inspirations
+https://github.com/blue0513/phantom-inline-comment
+https://www.emacswiki.org/emacs/InPlaceAnnotations
