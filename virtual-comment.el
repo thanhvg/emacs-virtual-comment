@@ -307,10 +307,7 @@ If not found or fail, return an empty hash talbe."
   "Read multiline from minibuffer.
 PROMPT with PRE-STRING binds EXIT-KEYSEQ to submit binds
 CLEAR-KEYSEQ to clear text."
-  (let ((keymap (copy-keymap minibuffer-local-map))
-        ;; enable evil in minibuffer
-        ;; https://github.com/emacs-evil/evil/pull/1059
-        (evil-want-minibuffer t))
+  (let ((keymap (copy-keymap minibuffer-local-map)))
     (define-key keymap (kbd "RET") 'newline)
     (define-key keymap exit-keyseq 'exit-minibuffer)
     (define-key keymap clear-keyseq
