@@ -572,7 +572,7 @@ run (virtual-comment-mode) again this function won't do anything."
 (defun virtual-comment-mode-enable ()
   "Run when variable `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
-  ;; (add-hook 'before-revert-hook 'virtual-comment-clear 0 t)
+  (add-hook 'before-revert-hook 'virtual-comment--clear 0 t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
   ;; (setq virtual-comment-buffer-data nil)
   (virtual-comment--init))
@@ -580,7 +580,7 @@ run (virtual-comment-mode) again this function won't do anything."
 (defun virtual-comment-mode-disable ()
   "Run when variable `virtual-comment-mode' is off."
   (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
-  ;; (remove-hook 'before-revert-hook 'virtual-comment-clear t)
+  (remove-hook 'before-revert-hook 'virtual-comment--clear t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   (virtual-comment--kill-buffer-hook-handler)
   (virtual-comment--clear)
