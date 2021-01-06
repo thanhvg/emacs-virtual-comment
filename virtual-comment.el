@@ -460,7 +460,7 @@ Decrease counter, check if should persist data."
       (let* ((indent (current-indentation))
              (org-comment (virtual-comment--get-comment-at point))
              (ov (if org-comment (virtual-comment--get-overlay-at point)
-                   (make-overlay point point))))
+                   (make-overlay point point nil t nil))))
         (overlay-put ov 'virtual-comment comment)
         (overlay-put ov
                      'before-string
@@ -480,7 +480,7 @@ Decrease counter, check if should persist data."
                    org-comment))
          ;; must get existing overlay when comment is non-nil
          (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point point))))
+               (make-overlay point point nil t nil))))
     (overlay-put ov 'virtual-comment comment)
     (overlay-put ov
                  'before-string
