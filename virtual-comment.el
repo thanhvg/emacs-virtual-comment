@@ -427,6 +427,7 @@ Clear all overlays and act like buffer about to close."
   (virtual-comment--clear)
   (virtual-comment--kill-buffer-hook-handler))
 
+
 ;;;###autoload
 (defun virtual-comment-next ()
   "Go to next/below comment."
@@ -549,14 +550,32 @@ The comment then can be pasted with `virtual-comment-paste'."
   (when virtual-comment-mode
     (virtual-comment--update-data-async)))
 
+(defun virtual-comment--reload-project ()
+  "Reload project data.
+First remove current project from store then load it from file
+and stuff to store again."
+  (virtual-comment--remove-project)
+  (let* ((project-data (virtual-comment--get-project)))
+    (setf (virtual-comment-project-files project-data)
+          (if-let (my-data
+                   (virtual-comment--load-data-from-file (virtual-comment--get-saved-file)))
+              my-data
+            (make-hash-table :test 'equal)))))
+
+(defun virtual-comment--reload-data ()
+  "Drop current data and reload from the store."
+  (virtual-comment--clear)
+  (mapc #'virtual-comment--make
+        (virtual-comment-buffer-data-comments
+         (virtual-comment--get-buffer-data))))
+
 (defun virtual-comment--init ()
   "Get everything ready if necessary store, project and buffer.
 This function should only run once when mode is active. That is
 after variable `virtual-comment-mode' is enabled in buffer, if you
 run (virtual-comment-mode) again this function won't do anything."
-  ;; get project
   (unless virtual-comment--is-initialized
-    (message "I run again")
+    ;; get project
     (let* ((project-data (virtual-comment--get-project))
            (count (virtual-comment-project-count project-data)))
       ;; check if project-data needs initialization

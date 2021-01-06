@@ -209,10 +209,21 @@ is based on outline mode.
 * TODO comments won't get saved when emacs closed or restarted
 * TODO comments scattered away when buffer changed not by user's input but but undo-tree or git pull
 * TODO use notify to listen to change in evc file
-we only persist to project .evc when the last buffer closed
+[x] we only persist to project .evc when the last buffer closed
 
-must have a function to replace active data with data loaded from store
+[x] must have a function to replace active data with data loaded from store
+- first call virtual-comment--reload-project once for the project
+- next each buffer calls virtual-comment--reload-data
 
-get all buffer belongs to the project and run the init again in a
+[ ] get all buffers belong to the project and run the init again in a
 with-current-buffer this way alleviates the doubled pubsub between buffers and
 store
+
+* TODO tie comment with line content
+(point comment line-content)
+
+and then before any update or a timer we run a function to reconcile any
+mismatch between point and line-content then find the right line and move the ov
+to it
+
+(thing-at-point 'line t)
