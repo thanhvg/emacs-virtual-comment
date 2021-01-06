@@ -25,20 +25,20 @@
 ;; comments don't belong to the files so they don't. They are saved in project
 ;; root or a global file which can be viewed and searched. The file name is
 ;; .evc.
-;; 
+;;
 ;; * Virtual comments
 ;; A virtual comment is an overlay and it is added above the line it comments on
 ;; and has the same indentation. The virtual comment can be single line or
 ;; multiline. Each line can have one comment.
-;; 
+;;
 ;; * Install
 ;; Spacemacs layer:
 ;; https://github.com/thanhvg/spacemacs-eos
-;; 
+;;
 ;; Vanilla
 ;; (require 'virtual-comment)
 ;; (add-hook 'find-file-hook 'virtual-comment-mode)
-;; 
+;;
 ;; * Commands
 ;; - virtual-comment-make: create or edit a comment at current line
 ;; - virtual-comment-next: go to next comment in buffer
@@ -46,17 +46,17 @@
 ;; - virtual-comment-delete: remove the current comment
 ;; - virtual-comment-paste: paste the last removed comment to current line
 ;; - virtual-comment-realign: realign the comments if they are misplaced
-;; 
+;;
 ;; - virtual-comment-show: show all comments of current project in a derived mode
 ;; from outline-mode, press enter on a comment will call virtual-comment-go to go
 ;; to the location of comment.
-;; 
+;;
 ;; There are no default bindings at all for these commands.
-;; 
+;;
 ;; * Remarks
 ;; It's very hard to manage overlays. So this mode should be use in a sensible way.
 ;; Only comments of files can be persisted.
-;; 
+;;
 ;; * Test
 ;; cask install
 ;; cask exec ert-runner
@@ -421,6 +421,12 @@ Decrease counter, check if should persist data."
       ;; remove project files from store
       (virtual-comment--remove-project))))
 
+(defun virtual-comment--revert-buffer-hook-handler ()
+  "On buffer about to revert.
+Clear all overlays and act like buffer about to close."
+  (virtual-comment--clear)
+  (virtual-comment--kill-buffer-hook-handler))
+
 ;;;###autoload
 (defun virtual-comment-next ()
   "Go to next/below comment."
@@ -550,6 +556,7 @@ after variable `virtual-comment-mode' is enabled in buffer, if you
 run (virtual-comment-mode) again this function won't do anything."
   ;; get project
   (unless virtual-comment--is-initialized
+    (message "I run again")
     (let* ((project-data (virtual-comment--get-project))
            (count (virtual-comment-project-count project-data)))
       ;; check if project-data needs initialization
@@ -572,7 +579,10 @@ run (virtual-comment-mode) again this function won't do anything."
 (defun virtual-comment-mode-enable ()
   "Run when variable `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
-  (add-hook 'before-revert-hook 'virtual-comment--clear 0 t)
+  (add-hook 'before-revert-hook
+            'virtual-comment--revert-buffer-hook-handler
+            0
+            t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
   ;; (setq virtual-comment-buffer-data nil)
   (virtual-comment--init))
@@ -580,7 +590,9 @@ run (virtual-comment-mode) again this function won't do anything."
 (defun virtual-comment-mode-disable ()
   "Run when variable `virtual-comment-mode' is off."
   (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
-  (remove-hook 'before-revert-hook 'virtual-comment--clear t)
+  (remove-hook 'before-revert-hook
+               'virtual-comment--revert-buffer-hook-handler
+               t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   (virtual-comment--kill-buffer-hook-handler)
   (virtual-comment--clear)

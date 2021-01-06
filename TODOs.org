@@ -206,7 +206,6 @@ is based on outline mode.
   "cvr" #'virtual-comment-realign)
 #+end_src
 
-
 * TODO comments won't get saved when emacs closed or restarted
 * TODO comments scattered away when buffer changed not by user's input but but undo-tree or git pull
 * TODO use notify to listen to change in evc file
@@ -217,4 +216,3 @@ must have a function to replace active data with data loaded from store
 get all buffer belongs to the project and run the init again in a
 with-current-buffer this way alleviates the doubled pubsub between buffers and
 store
-
