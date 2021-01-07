@@ -415,7 +415,9 @@ Decrease counter, check if should persist data."
     (cl-decf (virtual-comment-project-count data))
     ;; persistence maybe
     (when (= 0 (virtual-comment-project-count data))
-      (message "virtual-comment: persisting virtual comments...")
+      (message
+       "virtual-comment: persisting virtual comments in %s"
+       (virtual-comment-get-evc-file))
       (virtual-comment-dump-data)
       ;; remove project files from store
       (virtual-comment--remove-project))))
