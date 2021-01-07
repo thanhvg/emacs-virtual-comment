@@ -72,7 +72,6 @@
 (require 'outline)
 (require 'simple)
 
-
 (defvar-local virtual-comment--buffer-data nil
   "Buffer comment data.")
 
@@ -421,12 +420,20 @@ Decrease counter, check if should persist data."
       ;; remove project files from store
       (virtual-comment--remove-project))))
 
-(defun virtual-comment--revert-buffer-hook-handler ()
+(defun virtual-comment--before-revert-buffer-hook-handler ()
   "On buffer about to revert.
 Clear all overlays and act like buffer about to close."
   (virtual-comment--clear)
-  (virtual-comment--kill-buffer-hook-handler))
+  (virtual-comment--kill-buffer-hook-handler)
+  (setq virtual-comment--is-initialized nil))
 
+(defun virtual-comment--after-revert-buffer-hook-handler ()
+  "On buffer after revert. Restore things."
+  ;; when it is a hard reload then virtual-comment-mode will
+  ;; be called twice via this hook and via normal-mode actions
+  ;; but it will do side effect only once thanks to the flag
+  ;; virtual-comment--is-initialized
+  (virtual-comment-mode))
 
 ;;;###autoload
 (defun virtual-comment-next ()
@@ -599,7 +606,11 @@ run (virtual-comment-mode) again this function won't do anything."
   "Run when variable `virtual-comment-mode' is on."
   (add-hook 'after-save-hook 'virtual-comment--update-data-async 0 t)
   (add-hook 'before-revert-hook
-            'virtual-comment--revert-buffer-hook-handler
+            'virtual-comment--before-revert-buffer-hook-handler
+            0
+            t)
+  (add-hook 'after-revert-hook
+            'virtual-comment--after-revert-buffer-hook-handler
             0
             t)
   (add-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler 0 t)
@@ -610,7 +621,10 @@ run (virtual-comment-mode) again this function won't do anything."
   "Run when variable `virtual-comment-mode' is off."
   (remove-hook 'after-save-hook 'virtual-comment--update-data-async t)
   (remove-hook 'before-revert-hook
-               'virtual-comment--revert-buffer-hook-handler
+               'virtual-comment--before-revert-buffer-hook-handler
+               t)
+  (remove-hook 'after-revert-hook
+               'virtual-comment--after-revert-buffer-hook-handler
                t)
   (remove-hook 'kill-buffer-hook 'virtual-comment--kill-buffer-hook-handler t)
   (virtual-comment--kill-buffer-hook-handler)
