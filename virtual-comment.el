@@ -355,30 +355,38 @@ When SHOULD-SORT is non-nil sort by point."
       ovs)))
 
 (defun virtual-comment--search (s)
-  "Search for S from the beginning.
-Fuzzy and ignore space."
-  (let* ((words (split-string s))
-        (s-multi-re (mapconcat #'regexp-quote words "\\(?:[ \t\n]+\\)")))
+  "Search for S from the beginning of buffer.
+Fuzzy and ignore space, return point if found otherwise nil."
+  (save-excursion
+    (let* ((words (split-string s))
+           (s-multi-re (mapconcat #'regexp-quote words "\\(?:[ \t\n]+\\)")))
       (goto-char (point-min))
       (if (re-search-forward s-multi-re nil t)
-          (match-beginning 0))
-      nil))
-
+          (match-beginning 0)
+        nil))))
 
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
   (save-excursion
     (goto-char (overlay-start ov))
 
+    ;; exclusiv branch either here (1) or (2)
     (let ((org-target (overlay-get ov 'virtual-comment-target))
           (current-target (thing-at-point 'line t)))
       (unless (string= org-target current-target)
         (message "org:%s cur:%s " org-target current-target)
         (when-let (found (virtual-comment--search org-target))
           (goto-char found))
+        (goto-char (point-at-bol))
+        (overlay-put ov
+                     'before-string
+                     (virtual-comment--make-comment-for-display
+                      (overlay-get ov 'virtual-comment)
+                      (current-indentation)))
+        (move-overlay ov (point-at-bol) (point-at-bol))
         (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))))
 
-    ;; algin
+    ;; (2) if align here then (1) was not invoked
     (unless (= (point) (point-at-bol))
       (overlay-put ov
                    'before-string
