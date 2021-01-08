@@ -233,7 +233,7 @@ when undo applies to region having comments, we lose them
   with-current-buffer. This way alleviates the doubled pubsub between buffers
   and store
 
-* INPROGRESS tie comment with line content
+* DONE tie comment with line content
 (point comment target)
 
 and then before any update or a timer we run a function to reconcile any
@@ -246,7 +246,12 @@ ov has virtual-comment virtual-comment-target
 
 virtual-comment--ovs-to-cmts could be the place to reconcile the change
 
-* TODO must decide where is the source of truth of 'virtual-comment-target
+* TODO now line is tied to ov comment should ov cover the whole line  
+and a notification inside ov can be added and the ov can self correct when there
+is change inside it and update its position and its virtual properties
+
+if so we don't need the reconcile process anymore
+* DONE must decide where is the source of truth of 'virtual-comment-target
 line at point or overlay
 where do we assign the point value that's where we pick up the target
 but point can be moved but target can be fixed on created
@@ -254,6 +259,7 @@ but point can be moved but target can be fixed on created
 + target should be fixed
 + [x] target created by -make
 + [x] target can be changed by -paste
++ [x] target can be changed by repair fn
 
 * how to reconcile
 org-open-at-point which calls org-link-open-as-file

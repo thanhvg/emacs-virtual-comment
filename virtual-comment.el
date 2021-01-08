@@ -228,13 +228,19 @@ If not found create it."
 There are two slots but for now we only care about slot comments."
   (not (virtual-comment-buffer-data-comments buffer-data)))
 
+;; (defun virtual-comment--ovs-to-cmts (ovs)
+;;   "Maps overlay OVS list to list of `virtual-comment-unit'."
+;;   (mapcar (lambda (ov)
+;;             (virtual-comment-unit-create
+;;              :point (overlay-start ov)
+;;              :comment (overlay-get ov 'virtual-comment)
+;;              :target (overlay-get ov 'virtual-comment-target)))
+;;           ovs))
+
 (defun virtual-comment--ovs-to-cmts (ovs)
-  "Maps overlay OVS list to list of `virtual-comment-unit'."
+  "Repair and map overlay OVS list to list of `virtual-comment-unit'."
   (mapcar (lambda (ov)
-            (virtual-comment-unit-create
-             :point (overlay-start ov)
-             :comment (overlay-get ov 'virtual-comment)
-             :target (overlay-get ov 'virtual-comment-target)))
+            (virtual-comment--repair-overlay-maybe ov t))
           ovs))
 
 (defun virtual-comment--update-data ()
@@ -365,8 +371,9 @@ Fuzzy and ignore space, return point if found otherwise nil."
           (match-beginning 0)
         nil))))
 
-(defun virtual-comment--repair-overlay-maybe (ov)
-  "Re-align coment overlay OV if necessary."
+(defun virtual-comment--repair-overlay-maybe (ov &optional make-comment-unit)
+  "Re-align coment overlay OV if necessary.
+When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
   (save-excursion
     (goto-char (overlay-start ov))
 
@@ -374,7 +381,6 @@ Fuzzy and ignore space, return point if found otherwise nil."
     (let ((org-target (overlay-get ov 'virtual-comment-target))
           (current-target (thing-at-point 'line t)))
       (unless (string= org-target current-target)
-        (message "org:%s cur:%s " org-target current-target)
         (when-let (found (virtual-comment--search org-target))
           (goto-char found))
         (goto-char (point-at-bol))
@@ -393,7 +399,12 @@ Fuzzy and ignore space, return point if found otherwise nil."
                    (virtual-comment--make-comment-for-display
                     (overlay-get ov 'virtual-comment)
                     (current-indentation)))
-      (move-overlay ov (point-at-bol) (point-at-bol)))))
+      (move-overlay ov (point-at-bol) (point-at-bol))))
+  (when make-comment-unit
+    (virtual-comment-unit-create
+     :point (overlay-start ov)
+     :comment (overlay-get ov 'virtual-comment)
+     :target (overlay-get ov 'virtual-comment-target))))
 
 ;;;###autoload
 (defun virtual-comment-realign ()
