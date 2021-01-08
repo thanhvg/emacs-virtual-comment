@@ -71,6 +71,7 @@
 (require 'subr-x)
 (require 'outline)
 (require 'simple)
+(require 'thingatpt)
 
 (defvar-local virtual-comment--buffer-data nil
   "Buffer comment data.")
@@ -107,12 +108,21 @@ When this value is non-nil then there is a timer for
 (defvar virtual-comment-deleted-overlay nil
   "Ref of the overlay deleted.")
 
+(cl-defstruct (virtual-comment-unit
+               (:constructor virtual-comment-unit-create)
+               (:copier nil))
+  "Comment data structure.
+POINT is point, COMMENT is comment TARGET is the line content on
+which the comment is."
+  point comment target)
+
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
                (:copier nil))
   "Store data of current buffer.
 FILENAME is file name from project root, it is not used.
-COMMENTS is list of (point . comment)."
+COMMENTS is list of (point . comment).
+COMMENTS is list of virtual-comment-unit."
   filename comments)
 
 (cl-defstruct (virtual-comment-store
@@ -221,9 +231,12 @@ There are two slots but for now we only care about slot comments."
   (not (virtual-comment-buffer-data-comments buffer-data)))
 
 (defun virtual-comment--ovs-to-cmts (ovs)
-  "Maps overlay OVS list to list of (point . comment)."
+  "Maps overlay OVS list to list of `virtual-comment-unit'."
   (mapcar (lambda (ov)
-            (cons (overlay-start ov) (overlay-get ov 'virtual-comment)))
+            (virtual-comment-unit-create
+             :point (overlay-start ov)
+             :comment (overlay-get ov 'virtual-comment)
+             :target (overlay-get ov 'virtual-comment-target)))
           ovs))
 
 (defun virtual-comment--update-data ()
@@ -467,10 +480,11 @@ Clear all overlays and act like buffer about to close."
            (concat "\n" (make-string indent ?\s)))
           "\n"))
 
-(defun virtual-comment--make (pair)
-  "Make a comment at point from PAIR of (point . comment)."
-  (let ((point (car pair))
-        (comment (cdr pair)))
+(defun virtual-comment--make (unit)
+  "Make a comment from a comment UNIT."
+  (let ((point (virtual-comment-unit-point unit))
+        (comment (virtual-comment-unit-comment unit))
+        (target (virtual-comment-unit-target unit)))
     (save-excursion
       (goto-char point)
       (let* ((indent (current-indentation))
@@ -478,6 +492,7 @@ Clear all overlays and act like buffer about to close."
              (ov (if org-comment (virtual-comment--get-overlay-at point)
                    (make-overlay point point nil t nil))))
         (overlay-put ov 'virtual-comment comment)
+        (overlay-put ov 'virtual-comment-target target)
         (overlay-put ov
                      'before-string
                      (virtual-comment--make-comment-for-display
@@ -490,6 +505,7 @@ Clear all overlays and act like buffer about to close."
   (interactive)
   (let* ((point (point-at-bol))
          (indent (current-indentation))
+         (target (thing-at-point 'line t))
          (org-comment (virtual-comment--get-comment-at point))
          (comment (virtual-comment--read-string
                    "Insert comment:"
@@ -498,6 +514,7 @@ Clear all overlays and act like buffer about to close."
          (ov (if org-comment (virtual-comment--get-overlay-at point)
                (make-overlay point point nil t nil))))
     (overlay-put ov 'virtual-comment comment)
+    (overlay-put ov 'virtual-comment-target target)
     (overlay-put ov
                  'before-string
                  (virtual-comment--make-comment-for-display comment indent))
@@ -653,22 +670,24 @@ run (virtual-comment-mode) again this function won't do anything."
     map)
   "Keymap for show.")
 
-(defun virtual-comment--print-comments (pair file-name root)
+(defun virtual-comment--print-comments (unit file-name root)
   "Print out comments.
-from PAIR is (point . comment) for FILE-NAME of project
+from UNIT is `virtual-comment-unit' for FILE-NAME of project
 ROOT."
   ;; (message "%s" comments)
   (let ((full-path (concat root file-name))
-        (point (car pair))
-        (comment (cdr pair)))
-    (insert (format "%s\n\n"
+        (point (virtual-comment-unit-point unit))
+        (comment (virtual-comment-unit-comment unit))
+        (target (virtual-comment-unit-target unit)))
+    (insert (format "%s\n%s"
                     (propertize comment
                                 ;; 'face 'highlight
                                 ;; 'font-lock-face 'underline
                                 'font-lock-face 'highlight
                                 'virtual-comment-point point
                                 'virtual-comment-file full-path
-                                'keymap virtual-comment-show-map)))))
+                                'keymap virtual-comment-show-map)
+                    target))))
 
 (defun virtual-comment--print (file-comments file-name root)
   "Print out comments from FILE-COMMENTS for FILE-NAME of project ROOT.

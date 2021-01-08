@@ -207,6 +207,7 @@ is based on outline mode.
 #+end_src
 
 * TODO comments won't get saved when emacs closed or restarted
+unconfirmed
 * DONE comments scattered away or lost when buffer changed not by user's input but by revert-buffer
 revert-buffer does it work like we open the file again?
 it is seems to be the case
@@ -218,21 +219,21 @@ we need to handle after-revert-buffer-hook
 
 but we can't tell hard and soft reload apart. Yes we set the flag
 virtual-comment--is-initialized 
-* TODO we can't do anything with undo
+* TODO we can't do anything to undo
 when undo applies to region having comments, we lose them
 
 * TODO use notify to listen to change in evc file
-[x] we only persist to project .evc when the last buffer closed
++ [x] we only persist to project .evc when the last buffer closed
 
-[x] must have a function to replace active data with data loaded from store
-- first call virtual-comment--reload-project once for the project
-- next each buffer calls virtual-comment--reload-data
++ [x] must have a function to replace active data with data loaded from store
+  - first call virtual-comment--reload-project once for the project
+  - next each buffer calls virtual-comment--reload-data
 
-[ ] get all buffers belong to the project and run the init again in a
-with-current-buffer this way alleviates the doubled pubsub between buffers and
-store
++ [ ] get all buffers belonging to the project and run the init again in a
+  with-current-buffer. This way alleviates the doubled pubsub between buffers
+  and store
 
-* TODO tie comment with line content
+* INPROGRESS tie comment with line content
 (point comment line-content)
 
 and then before any update or a timer we run a function to reconcile any
@@ -240,3 +241,10 @@ mismatch between point and line-content then find the right line and move the ov
 to it
 
 (thing-at-point 'line t)
+
+ov has virtual-comment virtual-comment-target
+
+virtual-comment--ovs-to-cmts could be the place to reconcile the change
+
++ [ ] must decide to add where is the source of true of 'virtual-comment-target
+  line at pont or overlay
