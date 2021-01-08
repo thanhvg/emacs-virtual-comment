@@ -112,7 +112,7 @@ When this value is non-nil then there is a timer for
                (:constructor virtual-comment-unit-create)
                (:copier nil))
   "Comment data structure.
-POINT is point, COMMENT is comment TARGET is the line content on
+POINT and COMMENT are self explained TARGET is the line content on
 which the comment is."
   point comment target)
 
@@ -121,7 +121,6 @@ which the comment is."
                (:copier nil))
   "Store data of current buffer.
 FILENAME is file name from project root, it is not used.
-COMMENTS is list of (point . comment).
 COMMENTS is list of virtual-comment-unit."
   filename comments)
 
@@ -141,7 +140,6 @@ which don't belong to a project. Slot projects is a list of
 Slot files is hashtable of file-name:`virtual-comment-buffer-data'
 Slot count is reference count."
   files count)
-
 
 (defun virtual-comment--get-store ()
   "Get comment store.
@@ -356,12 +354,32 @@ When SHOULD-SORT is non-nil sort by point."
                 (< (overlay-start first) (overlay-start second))))
       ovs)))
 
+(defun virtual-comment--search (s)
+  "Search for S from the beginning.
+Fuzzy and ignore space."
+  (let* ((words (split-string s))
+        (s-multi-re (mapconcat #'regexp-quote words "\\(?:[ \t\n]+\\)")))
+      (goto-char (point-min))
+      (if (re-search-forward s-multi-re nil t)
+          (match-beginning 0))
+      nil))
+
+
 (defun virtual-comment--repair-overlay-maybe (ov)
   "Re-align coment overlay OV if necessary."
   (save-excursion
     (goto-char (overlay-start ov))
+
+    (let ((org-target (overlay-get ov 'virtual-comment-target))
+          (current-target (thing-at-point 'line t)))
+      (unless (string= org-target current-target)
+        (message "org:%s cur:%s " org-target current-target)
+        (when-let (found (virtual-comment--search org-target))
+          (goto-char found))
+        (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))))
+
+    ;; algin
     (unless (= (point) (point-at-bol))
-      ;; repair
       (overlay-put ov
                    'before-string
                    (virtual-comment--make-comment-for-display
@@ -541,20 +559,31 @@ The comment then can be pasted with `virtual-comment-paste'."
     (virtual-comment--delete-comment-at point))
   (virtual-comment--update-data-async-maybe))
 
-(defun virtual-comment--paste-at (point indent)
-  "Paste comment at POINT and with INDENT."
+(defun virtual-comment--paste-at (point indent target)
+  "Paste comment at POINT and with INDENT and update its TARGET."
   (when virtual-comment-deleted-overlay
     (let ((comment-for-display (virtual-comment--make-comment-for-display
-                                (overlay-get virtual-comment-deleted-overlay 'virtual-comment)
+                                (overlay-get
+                                 virtual-comment-deleted-overlay
+                                 'virtual-comment)
                                 indent)))
-      (overlay-put virtual-comment-deleted-overlay 'before-string comment-for-display)
-      (move-overlay virtual-comment-deleted-overlay point point))))
+      (overlay-put virtual-comment-deleted-overlay
+                   'before-string
+                   comment-for-display)
+      (overlay-put virtual-comment-deleted-overlay
+                   'virtual-comment-target
+                   target)
+      (move-overlay virtual-comment-deleted-overlay
+                    point
+                    point))))
 
 ;;;###autoload
 (defun virtual-comment-paste ()
   "Paste comment."
   (interactive)
-  (virtual-comment--paste-at (point-at-bol) (current-indentation))
+  (virtual-comment--paste-at (point-at-bol)
+                             (current-indentation)
+                             (thing-at-point 'line t))
   (virtual-comment--update-data-async-maybe))
 
 (defun virtual-comment--clear ()
@@ -584,7 +613,8 @@ and stuff to store again."
   (let* ((project-data (virtual-comment--get-project)))
     (setf (virtual-comment-project-files project-data)
           (if-let (my-data
-                   (virtual-comment--load-data-from-file (virtual-comment--get-saved-file)))
+                   (virtual-comment--load-data-from-file
+                    (virtual-comment--get-saved-file)))
               my-data
             (make-hash-table :test 'equal)))))
 
