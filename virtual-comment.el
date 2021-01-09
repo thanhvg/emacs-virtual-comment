@@ -78,7 +78,6 @@
 
 (defvar virtual-comment--store nil
   "Global comment store.")
-
 (defvar-local virtual-comment--project nil
   "Project comment store.")
 
@@ -347,7 +346,8 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-            (overlays-in point point)))
+            ;; (overlays-in point point)))
+            (overlays-at point point)))
 
 (defun virtual-comment--get-buffer-overlays (&optional should-sort)
   "Get all overlay comment.
@@ -359,6 +359,10 @@ When SHOULD-SORT is non-nil sort by point."
               (lambda (first second)
                 (< (overlay-start first) (overlay-start second))))
       ovs)))
+
+(defun virtual-comment--line-at-point ()
+  "Revinvent `thing-at-point line'."
+  (buffer-substring (point-at-bol) (point-at-eol)))
 
 (defun virtual-comment--search (s)
   "Search for S from the beginning of buffer.
@@ -389,7 +393,7 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
                      (virtual-comment--make-comment-for-display
                       (overlay-get ov 'virtual-comment)
                       (current-indentation)))
-        (move-overlay ov (point-at-bol) (point-at-bol))
+        (move-overlay ov (point-at-bol) (point-at-eol))
         (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))))
 
     ;; (2) if align here then (1) was not invoked
@@ -399,7 +403,7 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
                    (virtual-comment--make-comment-for-display
                     (overlay-get ov 'virtual-comment)
                     (current-indentation)))
-      (move-overlay ov (point-at-bol) (point-at-bol))))
+      (move-overlay ov (point-at-bol) (point-at-eol))))
   (when make-comment-unit
     (virtual-comment-unit-create
      :point (overlay-start ov)
@@ -419,21 +423,31 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
   (when-let (ov (virtual-comment--get-overlay-at point))
     (overlay-get ov 'virtual-comment)))
 
+;; (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
+;;   "Move overlay back to the front.
+;; OV is overlay, IS-AFTER-CHANGE, _ are extra
+;; params. If there is already a ov comment on the line, the moved
+;; ov will be discarded and its comment will be added to the host
+;; comment."
+;;   (when is-after-change
+;;     (let* ((point (point-at-bol))
+;;            (comment (overlay-get ov 'virtual-comment))
+;;            (comment-for-display (virtual-comment--make-comment-for-display
+;;                                  comment
+;;                                  (current-indentation))))
+;;       (move-overlay ov point (point-at-eol))
+;;       (overlay-put ov 'before-string comment-for-display)
+;;       (overlay-put ov 'virtual-comment comment))))
+
 (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
-  "Move overlay back to the front.
-OV is overlay, IS-AFTER-CHANGE, _ are extra
-params. If there is already a ov comment on the line, the moved
-ov will be discarded and its comment will be added to the host
-comment."
+  "Update ov field virtual-comment-target.
+OV is overlay, IS-AFTER-CHANGE, _ are extra params."
   (when is-after-change
-    (let* ((point (point-at-bol))
-           (comment (overlay-get ov 'virtual-comment))
-           (comment-for-display (virtual-comment--make-comment-for-display
-                                 comment
-                                 (current-indentation))))
-      (move-overlay ov point point)
-      (overlay-put ov 'before-string comment-for-display)
-      (overlay-put ov 'virtual-comment comment))))
+    (overlay-put ov
+                 'virtual-comment-target
+                 (save-excursion
+                   (goto-char (overlay-start ov))
+                   (thing-at-point 'line t)))))
 
 (defun virtual-comment--get-neighbor-cmt (point end-point getter-func)
   "Return point of the neighbor comment of POINT, nil if not found.
@@ -527,14 +541,17 @@ Clear all overlays and act like buffer about to close."
       (let* ((indent (current-indentation))
              (org-comment (virtual-comment--get-comment-at point))
              (ov (if org-comment (virtual-comment--get-overlay-at point)
-                   (make-overlay point point nil t nil))))
+                   (make-overlay point (point-at-eol) nil t nil))))
         (overlay-put ov 'virtual-comment comment)
         (overlay-put ov 'virtual-comment-target target)
         (overlay-put ov
                      'before-string
                      (virtual-comment--make-comment-for-display
                       comment
-                      indent))))))
+                      indent))
+        (overlay-put ov
+                     'modification-hooks
+                     '(virtual-comment--insert-hook-handler))))))
 
 ;;;###autoload
 (defun virtual-comment-make ()
@@ -549,7 +566,7 @@ Clear all overlays and act like buffer about to close."
                    org-comment))
          ;; must get existing overlay when comment is non-nil
          (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point point nil t nil))))
+               (make-overlay point (point-at-eol) nil t nil))))
     (overlay-put ov 'virtual-comment comment)
     (overlay-put ov 'virtual-comment-target target)
     (overlay-put ov
@@ -559,7 +576,7 @@ Clear all overlays and act like buffer about to close."
     ;; (unless org-comment
     ;;   (overlay-put ov 'insert-in-front-hooks '(virtual-comment--insert-hook-handler))
     ;; (overlay-put ov 'insert-behind-hooks '(virtual-comment--insert-hook-handler))
-    ;; (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
+    (overlay-put ov 'modification-hooks '(virtual-comment--insert-hook-handler))
     (virtual-comment--update-data-async-maybe)))
 
 (defun virtual-comment--delete-comment-at (point)
@@ -594,7 +611,7 @@ The comment then can be pasted with `virtual-comment-paste'."
                    target)
       (move-overlay virtual-comment-deleted-overlay
                     point
-                    point))))
+                    (point-at-eol)))))
 
 ;;;###autoload
 (defun virtual-comment-paste ()

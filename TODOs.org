@@ -246,7 +246,7 @@ ov has virtual-comment virtual-comment-target
 
 virtual-comment--ovs-to-cmts could be the place to reconcile the change
 
-* TODO now line is tied to ov comment should ov cover the whole line  
+* TODO [ovwl] now line is tied to ov comment should ov cover the whole line?
 and a notification inside ov can be added and the ov can self correct when there
 is change inside it and update its position and its virtual properties
 
