@@ -397,7 +397,7 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
         (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))))
 
     ;; (2) if align here then (1) was not invoked
-    (unless (= (point) (point-at-bol))
+    (unless (bolp)
       (overlay-put ov
                    'before-string
                    (virtual-comment--make-comment-for-display
