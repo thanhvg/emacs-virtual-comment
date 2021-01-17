@@ -20,7 +20,10 @@ multiline. Each line can have one comment.
 Spacemacs layer:
 https://github.com/thanhvg/spacemacs-eos
 
-Vanilla
+Melpa
+
+[[https://melpa.org/#/virtual-comment][file:https://melpa.org/packages/virtual-comment-badge.svg]]
+
 #+begin_src
 (require 'virtual-comment)
 (add-hook 'find-file-hook 'virtual-comment-mode)
