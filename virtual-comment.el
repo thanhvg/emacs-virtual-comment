@@ -362,7 +362,7 @@ When SHOULD-SORT is non-nil sort by point."
       ovs)))
 
 (defun virtual-comment--line-at-point ()
-  "Revinvent `thing-at-point line'."
+  "Reinvent `thing-at-point line'."
   (buffer-substring (point-at-bol) (point-at-eol)))
 
 (defun virtual-comment--search (s)
@@ -506,7 +506,7 @@ Clear all overlays and act like buffer about to close."
 (defun virtual-comment-next ()
   "Go to next/below comment."
   (interactive)
-  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-bol)
+  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-eol)
                                                     (point-max)
                                                     #'next-overlay-change))
       (goto-char point)
