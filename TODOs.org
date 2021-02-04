@@ -289,3 +289,15 @@ finally (org-link-search "/When/")
             (throw :fuzzy-match t)))
         nil))
 [[file:virtual-comment.el::unless (string= org-target current-target]]
+
+* overlays-in vs overlays-at
+this is a headache
+for (virtual-comment--get-overlay-at point)
+we use (overlays-at point) to get all overlays but this function can't
+get empty overlays. (overlays-in point point) can get the empty overlays
+but then it can't get overlays when at the beginning of the overlay start
+
+we may risk to use save-excursion to check for empty line which is not clean.
+fix is (overlays-in point (1+ point)), may need to consider the point-max
+
+

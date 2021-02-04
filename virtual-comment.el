@@ -347,8 +347,8 @@ prompt"
 (defun virtual-comment--get-overlay-at (point)
   "Return the overlay comment of this POINT."
   (seq-find #'virtual-comment--overlayp
-            ;; (overlays-in point point)))
-            (overlays-at point point)))
+            (overlays-in point (1+ point))))
+            ;; (overlays-at point)))
 
 (defun virtual-comment--get-buffer-overlays (&optional should-sort)
   "Get all overlay comment.
