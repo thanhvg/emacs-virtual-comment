@@ -818,5 +818,16 @@ ROOT is project root."
                             (format "*%s*" (if root root "default")))
                            file-name)))
 
+(defun virtual-comment--emacs-kill-hook-handler ()
+  "Handler to run when emacs about to close.
+Go through buffer list and act like buffer about to close."
+  (dolist (buffer (buffer-list))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when virtual-comment-mode
+          (virtual-comment--kill-buffer-hook-handler))))))
+
+(add-hook 'kill-emacs-hook #'virtual-comment--emacs-kill-hook-handler)
+
 (provide 'virtual-comment)
 ;;; virtual-comment.el ends here

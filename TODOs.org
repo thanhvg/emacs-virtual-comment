@@ -299,5 +299,13 @@ but then it can't get overlays when at the beginning of the overlay start
 
 we may risk to use save-excursion to check for empty line which is not clean.
 fix is (overlays-in point (1+ point)), may need to consider the point-max
+* before emacs is killed, persistence won't kick it
+it seems that kill-buffer-hook is not triggered in this case
+
+insprired by flycheck-global-teardown we would do the same
+add have a function to kill buffer hook
+this function will go through the buffer list if mode is active
+it will call 
+
 
 
