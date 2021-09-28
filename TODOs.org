@@ -309,3 +309,9 @@ it will call
 
 
 
+
+* TODO ref feature
+a function to produce this string: symbol | project-file-path:line-number
+a function to get read the string and extract project-file-path:line-number then allows us to go there
+
+how can we add the string to the comment? we store the string in a list ((string . project)) then we invoke a function to append the string to the comment
