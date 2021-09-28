@@ -86,6 +86,7 @@
 
 (defvar virtual-comment--store nil
   "Global comment store.")
+
 (defvar-local virtual-comment--project nil
   "Project comment store.")
 
@@ -306,14 +307,29 @@ There are two slots but for now we only care about slot comments."
     (let ((standard-output (current-buffer)))
       (prin1 data))))
 
-(defun virtual-comment-persist ()
+(defun virtual-comment--persist ()
   "Persist project data to file."
-  (interactive)
   (let ((data (virtual-comment--get-project))
         (file (virtual-comment-get-evc-file)))
     (virtual-comment--dump-data-to-file (virtual-comment-project-files
                                          data)
                                         file)))
+
+(defun virtual-comment--take-non-nil (project-files-slot)
+  "Create new hash table from PROJECT-FILES-SLOT and remove empty value."
+  (let ((my-hashtable (make-hash-table)))
+    (maphash (lambda (k v) (when (virtual-comment-buffer-data-comments v)
+                             (puthash k v my-hashtable)))
+             project-files-slot)
+    my-hashtable))
+
+(defun virtual-comment-persist ()
+  "Persist project data to file."
+  (interactive)
+  (let ((data (virtual-comment--get-project))
+        (file (virtual-comment-get-evc-file)))
+    (virtual-comment--dump-data-to-file
+     (virtual-comment--take-non-nil (virtual-comment-project-files data)) file)))
 
 (defun virtual-comment--load-data-from-file (file)
   "Read data from FILE.
@@ -493,7 +509,7 @@ Decrease counter, check if should persist data."
       (message
        "virtual-comment: persisting virtual comments in %s"
        (virtual-comment-get-evc-file))
-      (virtual-comment-persist)
+      (virtual-comment--persist)
       ;; remove project files from store
       (virtual-comment--remove-project))))
 
