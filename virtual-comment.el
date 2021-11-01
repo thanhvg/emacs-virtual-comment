@@ -3,7 +3,7 @@
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.0.2
+;; Version: 0.0.3
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -69,8 +69,11 @@
 ;; https://github.com/blue0513/phantom-inline-comment
 ;; https://www.emacswiki.org/emacs/InPlaceAnnotations
 ;;
-;; Change log
-;; 20210-09-27: 0.02 add location/reference
+;; Changelog
+;; 2021-11-01:
+;;  0.03 virtual-comment-make create its own buffer to get input, no longer use read-from-minibuffer 
+;; 2021-09-27:
+;;  0.02 add location/reference
 
 ;;; Code:
 (require 'cl-lib)
@@ -633,7 +636,7 @@ Won't prepend new line if comment is nil"
       (virtual-comment--goto-location (completing-read "Select:" candidates)))))
 
 ;;;###autoload
-(defun virtual-comment-make ()
+(defun virtual-comment-make-old ()
   "Add or edit comment at current line."
   (interactive)
   (let* ((point (point-at-bol))
@@ -646,8 +649,91 @@ Won't prepend new line if comment is nil"
          ;; must get existing overlay when comment is non-nil
          (ov (if org-comment (virtual-comment--get-overlay-at point)
                (make-overlay point (point-at-eol) nil t nil))))
-    (virtual-comment--ov-ensure ov comment target indent)
+    (if (> (length comment) 0)
+        (virtual-comment--ov-ensure ov comment target indent)
+      (delete-overlay ov))
     (virtual-comment--update-data-async-maybe)))
+
+(defvar-local virtual-comment-make--callback nil)
+
+(defun virtual-comment-make ()
+  "Add or edit comment at current line."
+  (interactive)
+  (let* ((point (point-at-bol))
+         (indent (current-indentation))
+         (target (thing-at-point 'line t))
+         (org-comment (virtual-comment--get-comment-at point))
+         (ov (if org-comment (virtual-comment--get-overlay-at point)
+               (make-overlay point (point-at-eol) nil t nil)))
+         (buffer (current-buffer)))
+    (select-window (split-window-vertically -4))
+    (switch-to-buffer (generate-new-buffer "*virtual-comment-make*"))
+    (text-mode)
+    (virtual-comment-make-mode 1)
+    (when org-comment
+      (insert org-comment))
+    ;; set up callback
+    (setq virtual-comment-make--callback
+          (lambda (comment)
+            (with-current-buffer buffer
+              (if (> (length comment) 0)
+                  (virtual-comment--ov-ensure ov comment target indent)
+                (unless org-comment
+                  (delete-overlay ov)))
+              (virtual-comment--update-data-async-maybe))))
+    (message
+     (substitute-command-keys
+      "\\[virtual-comment-make-done] to finish, \\[virtual-comment-make-abort] to abort"))))
+
+(defvar virtual-comment-make-mode-map
+  (let ((keymap (make-sparse-keymap)))
+    (define-key keymap (kbd "C-c C-k") #'virtual-comment-make-abort)
+    (define-key keymap (kbd "C-c C-c") #'virtual-comment-make-done)
+    ;; (define-key keymap (kbd "C-c C-b") #'virtual-comment-make-clear)
+    keymap))
+
+(define-minor-mode virtual-comment-make-mode
+  "Minor mode to get text input for virtual-comment."
+  :lighter " evcmm"
+  :keymap virtual-comment-make-mode-map
+  (if virtual-comment-make-mode
+      (add-hook 'post-command-hook 'virtual-comment-make-mode--post-command nil t)
+    (remove-hook 'post-command-hook 'virtual-comment-make-mode--post-command t)))
+
+(defun virtual-comment-make-mode--post-command ()
+  (virtual-comment-make-mode--adjust-window-size-to-fit-text))
+
+(defun virtual-comment-make-mode--adjust-window-size-to-fit-text ()
+  (when (and (> (+ 2 (line-number-at-pos (point-max)))
+                (window-height))
+             (> (/ (frame-height) (window-height))
+                1))
+    (enlarge-window 1)))
+
+(defun virtual-comment-make-abort ()
+  "Abort virtual-comment-make"
+  (interactive)
+  (let ((callback virtual-comment-make--callback))
+    (kill-buffer)
+    (delete-window)
+    ;; memory leak must still delete ov
+    (funcall callback "")))
+
+(defun virtual-comment-make-clear ()
+  "Clear current edit buffer of virtual-comment-make."
+  (interactive)
+  (delete-region (point-min) (point-max)))
+
+(defun virtual-comment-make-done ()
+  "Done with virtual-comment-make, apply the change."
+  (interactive)
+  ;; grab the text
+  ;; run the callback
+  (let ((content (buffer-substring-no-properties (point-min) (point-max)))
+        (callback virtual-comment-make--callback))
+    (kill-buffer)
+    (delete-window)
+    (funcall callback content)))
 
 (defun virtual-comment--get-location-at-point (&optional want-full-path)
   "Get symbol at point and its project path or full path plus line number."

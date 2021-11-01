@@ -313,3 +313,32 @@ a function to produce this string: symbol | project-file-path:line-number
 a function to get read the string and extract project-file-path:line-number then allows us to go there
 
 how can we add the string to the comment? we store the string in a list ((string . project)) then we invoke a function to append the string to the comment
+
+* TODO Issue with multiple frame for emacs 28
+on emacs 28 read-from-minibuffer will be unable to focus to the prompt on first
+try if the prompt or the initial text has new line character.
+(read-from-minibuffer "what: \n")
+
+this is because emacs 28 has a new behavior for minibuffer
+
+#+begin_quote
+Improved handling of minibuffers on switching frames.
+By default, when you switch to another frame, an active minibuffer now
+moves to the newly selected frame.  Nevertheless, the effect of what
+you type in the minibuffer happens in the frame where the minibuffer
+was first activated.  An alternative behavior is available by
+customizing 'minibuffer-follows-selected-frame' to nil.  Here, the
+minibuffer stays in the frame where you first opened it, and you must
+switch back to this frame to continue or abort its command.  The old
+behavior, which mixed these two, can be approximated by customizing
+'minibuffer-follows-selected-frame' to a value which is neither nil
+nor t.
+#+end_quote
+
+The old behavior is desired
+(setq minibuffer-follows-selected-frame nil)
+
+probably need to move away from minibuffer to prompt for a block of text
+string-edit and phantom-inline-comment are examples
+** create buffer
+run a callback
