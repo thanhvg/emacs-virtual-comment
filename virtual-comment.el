@@ -656,6 +656,7 @@ Won't prepend new line if comment is nil"
 
 (defvar-local virtual-comment-make--callback nil)
 
+;;;###autoload
 (defun virtual-comment-make ()
   "Add or edit comment at current line."
   (interactive)
