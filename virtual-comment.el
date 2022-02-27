@@ -3,7 +3,7 @@
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.0.3
+;; Version: 0.4
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@
 ;; - virtual-comment-realign: realign the comments if they are misplaced
 ;; - virtual-comment-persist: manually persist project comments
 ;; - virtual-comment-show: show all comments of current project in a derived mode
+;; - virtual-comment-show-delete-display-unit-at-point: delete comment from virtual-comment-show buffer
 ;; from outline-mode, press enter on a comment will call virtual-comment-go to go
 ;; to the location of comment.
 ;; Commands to link to other location (reference):
@@ -70,8 +71,10 @@
 ;; https://www.emacswiki.org/emacs/InPlaceAnnotations
 ;;
 ;; Changelog
+;; 2022-02-28:
+;;  0.4 virtual-comment-show-delete-display-unit-at-point
 ;; 2021-11-01:
-;;  0.03 virtual-comment-make create its own buffer to get input, no longer use read-from-minibuffer 
+;;  0.03 virtual-comment-make create its own buffer to get input, no longer use read-from-minibuffer
 ;; 2021-09-27:
 ;;  0.02 add location/reference
 
@@ -135,7 +138,7 @@ which the comment is."
                (:copier nil))
   "Store data of current buffer.
 FILENAME is file name from project root, it is not used.
-COMMENTS is list of virtual-comment-unit."
+COMMENTS is list of `virtual-comment-unit'."
   filename comments)
 
 (cl-defstruct (virtual-comment-store
@@ -519,8 +522,8 @@ Decrease counter, check if should persist data."
 (defun virtual-comment--before-revert-buffer-hook-handler ()
   "On buffer about to revert.
 Clear all overlays and act like buffer about to close."
-  (virtual-comment--clear)
   (virtual-comment--kill-buffer-hook-handler)
+  (virtual-comment--clear)
   (setq virtual-comment--is-initialized nil))
 
 (defun virtual-comment--after-revert-buffer-hook-handler ()
@@ -896,7 +899,7 @@ run (virtual-comment-mode) again this function won't do anything."
   "Go to location of comment at point of view buffer."
   (interactive)
   (let ((active-point (get-text-property (point) 'virtual-comment-point))
-        (file-name (get-text-property (point) 'virtual-comment-file)))
+        (file-name (get-text-property (point) 'virtual-comment-full-path)))
     (when (and active-point file-name)
       (find-file file-name)
       (goto-char active-point))))
@@ -905,12 +908,13 @@ run (virtual-comment-mode) again this function won't do anything."
   ;; (setq virtual-comment-show-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'virtual-comment-go)
+    (define-key map (kbd "C-c C-d") 'virtual-comment-show-delete-display-unit-at-point)
     map)
   "Keymap for show.")
 
 (defun virtual-comment--print-comments (unit file-name root)
   "Print out comments.
-from UNIT is `virtual-comment-unit' for FILE-NAME of project
+from UNIT as `virtual-comment-unit' for FILE-NAME of project
 ROOT."
   ;; (message "%s" comments)
   (let ((full-path (concat root file-name))
@@ -923,7 +927,8 @@ ROOT."
                                 ;; 'font-lock-face 'underline
                                 'font-lock-face 'highlight
                                 'virtual-comment-point point
-                                'virtual-comment-file full-path
+                                'virtual-comment-full-path full-path
+                                'virtual-comment-relative-path file-name
                                 'keymap virtual-comment-show-map)
                     target))))
 
@@ -997,6 +1002,87 @@ Go through buffer list and act like buffer about to close."
       (with-current-buffer buffer
         (when virtual-comment-mode
           (virtual-comment--kill-buffer-hook-handler))))))
+
+(defun virtual-comment-show--thing-at-point (&optional thing)
+  "_"
+  (pcase thing
+    ('full-path (get-text-property (point) 'virtual-comment-full-path))
+    ('relative-path (get-text-property (point) 'virtual-comment-relative-path))
+    (_ (get-text-property (point) 'virtual-comment-point))))
+
+(defun virtual-comment-show--begin-of-display-unit (vc-point)
+  "Get the start of the comment display unit.
+Display unit is the comment string and target string. Current
+point is on the comment string. VC-POINT is the current
+`virtual-comment-point of the current point. Find the beginning
+of the comment string and return it's point."
+  (save-excursion
+    ;; go backward
+    (while (and (not (bobp))
+                (eql vc-point (virtual-comment-show--thing-at-point)))
+      (backward-char 1))
+    (point)))
+
+(defun virtual-comment-show--end-of-display-unit (vc-point)
+  "See `virtual-comment-show--begin-of-display-unit'."
+  (save-excursion
+    ;; go foward
+    (while (and (not (eobp))
+                (eql vc-point (if-let ((my-p (virtual-comment-show--thing-at-point)))
+                                  my-p
+                                vc-point)))
+      (forward-char 1))
+    (1- (point))))
+
+(defun virtual-comment-show--delete-display-unit (vc-point)
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (delete-region
+       (virtual-comment-show--begin-of-display-unit vc-point)
+       (virtual-comment-show--end-of-display-unit vc-point)))))
+
+(defun virtual-comment-show-delete-display-unit-at-point ()
+  "_"
+  (interactive)
+  (when-let ((vc-point (virtual-comment-show--thing-at-point))
+             (full-path (virtual-comment-show--thing-at-point 'full-path))
+             (file-name (virtual-comment-show--thing-at-point 'relative-path)))
+    ;; delete the display unit in show mode
+    (virtual-comment-show--delete-display-unit vc-point)
+    (forward-line)
+    ;; update the store
+    (virtual-comment--remove-comment vc-point
+                                     file-name
+                                     (virtual-comment--get-project))
+    ;; if buffer is live remove the the comment ov form it
+    (virtual-comment--remove-comment-from-file-buffer-maybe vc-point full-path)))
+
+(defun virtual-comment--remove-comment-from-file-buffer-maybe (vc-point full-name)
+  "_"
+  (when-let ((buff (find-buffer-visiting full-name)))
+    (with-current-buffer buff
+      (when-let ((ov (virtual-comment--get-overlay-at vc-point)))
+        (delete-overlay ov))
+    )))
+
+(defun virtual-comment--remove-comment-from-units (comment-units point)
+  "Take COMMENT-UNITS list of `virtual-comment-unit' return the filtered list.
+Remove the unit that has COMMENT from the list and return the
+list."
+  (seq-remove (lambda (cmt-unit)
+                (eql (virtual-comment-unit-point cmt-unit) point))
+              comment-units))
+
+(defun virtual-comment--remove-comment (vc-point file-name project)
+  "-"
+  ;; get project from store
+  ;; get file data from project
+  (let* ((file-data  (virtual-comment--get-buffer-data-in-project
+                      file-name
+                      project))
+         (file-comment-units (virtual-comment-buffer-data-comments file-data)))
+    (setf (virtual-comment-buffer-data-comments file-data)
+          (virtual-comment--remove-comment-from-units file-comment-units vc-point))))
 
 (add-hook 'kill-emacs-hook #'virtual-comment--emacs-kill-hook-handler)
 

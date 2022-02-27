@@ -39,7 +39,8 @@ Melpa
 - =virtual-comment-persist=: manually persist project comments
 - =virtual-comment-show=: show all comments of current project in a derived mode
 from =outline-mode=, press enter on a comment will call =virtual-comment-go= to go
-to the location of comment.
+to the location of comment. =C-c C-d=
+(=virtual-comment-show-delete-display-unit-at-point=) will delete that comemt.
 
 There are no default bindings at all for these commands.
 

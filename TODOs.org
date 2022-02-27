@@ -40,6 +40,8 @@ means it is the last consumer of the store so it set the comment variable to
 nil. Persist the data to a .ilc file
 
 No memory leak this way.
+
+how buffer updates data
 ** occur mode add marker info to text 
 (get-text-property (point) 'occur-target)
 
@@ -314,7 +316,7 @@ a function to get read the string and extract project-file-path:line-number then
 
 how can we add the string to the comment? we store the string in a list ((string . project)) then we invoke a function to append the string to the comment
 
-* TODO Issue with multiple frame for emacs 28
+* DONE Issue with multiple frame for emacs 28
 on emacs 28 read-from-minibuffer will be unable to focus to the prompt on first
 try if the prompt or the initial text has new line character.
 (read-from-minibuffer "what: \n")
@@ -342,3 +344,13 @@ probably need to move away from minibuffer to prompt for a block of text
 string-edit and phantom-inline-comment are examples
 ** create buffer
 run a callback
+* DONE delete comments from  evcs
+on evcs buffer get the  virtual-comment-unit at point
+
+remove it from virtual-comment-buffer-data 
+
+delete the the comment and the target line in the buffer
+
+check if the target buffer is open. If so trigger update on that buffer
+
+default case when handle non project files
