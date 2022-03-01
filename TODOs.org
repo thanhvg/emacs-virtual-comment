@@ -70,6 +70,57 @@ multiple line really" 0 11
 #+end_src
 
 https://github.com/sigma/pcache
+** virtual-comment-store: singleton
+*** default: virtual-comment-project 
+*** projects: {project-id: virtual-comment-project} 
+- project-id: md5
+**** virtual-comment-project 
+***** count: Number
+***** files: {filename: virtual-comment-buffer-data}
+****** virtual-comment-buffer-data
+******* filename
+******* comments: [virtual-comment-unit]
+******** virtual-comment-unit
+********* point
+********* comment
+********* target
+** uml
+#+begin_src plantuml :file media/data.svg
+@startjson
+{
+   "virtual-comment-store" : {
+      "default" : {},
+      "projects" : {
+         "project-id" : {
+            "count" : "Number",
+            "files" : {
+               "file-id" : {
+                  "comments" : [
+                     {
+                        "comment" : "String",
+                        "point" : "Number",
+                        "target" : "String"
+                     },
+                     {
+                        "comment" : "String",
+                        "point" : "Number",
+                        "target" : "String"
+                     }
+                  ],
+                  "file-name" : "String"
+               },
+               "file-id-2" : []
+            }
+         },
+         "project-id-2" : {}
+      }
+   }
+}
+@endjson
+#+end_src
+
+#+RESULTS:
+[[file:media/data.svg]]
 
 * overlay structure
 (overlay-put (make-overlay (point) (point) (current-buffer)) 'before-string "crap")
@@ -354,3 +405,4 @@ delete the the comment and the target line in the buffer
 check if the target buffer is open. If so trigger update on that buffer
 
 default case when handle non project files
+

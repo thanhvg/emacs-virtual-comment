@@ -145,8 +145,9 @@ COMMENTS is list of `virtual-comment-unit'."
                (:constructor virtual-comment-store-create)
                (:copier nil))
   "Global store of comments.
-Slot default is default `virtual-comment-project' for buffers
-which don't belong to a project. Slot projects is a list of
+Slot DEFAULT is default `virtual-comment-project' for buffers
+which don't belong to a project. Slot PROJECTS is a hash table of
+project unique id (md5 of project path) to
 `virtual-comment-project'."
   default projects)
 
