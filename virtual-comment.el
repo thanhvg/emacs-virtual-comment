@@ -198,13 +198,23 @@ When PROJECT-ID is nil, the default slot of store is in action."
   "Return project unique id form PROJECT-LOCATION."
   (md5 project-location))
 
+(defun virtual-comment--get-root ()
+  "Return absolute path of current project, nil if not found.
+
+If `project-root' could deal with nil type then we wouldn't need this
+helper function. We can cl-method nil type for `project-root' but
+it is not our business."
+  (if-let (prj (project-current))
+      (project-root prj)
+    nil))
+
 (defun virtual-comment--get-project ()
   "Get project from store.
 Return `virtual-comment--project'."
   (if virtual-comment--project
       virtual-comment--project
     (setq virtual-comment--project
-          (let* ((root (cdr (project-current)))
+          (let* ((root (virtual-comment--get-root))
                  (project-id (if root
                                  (virtual-comment--make-project-id root)
                                nil)))
@@ -212,7 +222,7 @@ Return `virtual-comment--project'."
 
 (defun virtual-comment--remove-project ()
   "Remove project from store."
-  (let* ((root (cdr (project-current)))
+  (let* ((root (virtual-comment--get-root))
          (project-id (if root
                          (virtual-comment--make-project-id root)
                        nil)))
@@ -287,7 +297,7 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment-get-evc-file ()
   "Return evc file path."
-  (let ((root (cdr (project-current))))
+  (let ((root (virtual-comment--get-root)))
     (if root
         (concat root ".evc")
       virtual-comment-default-file)))
@@ -295,7 +305,7 @@ There are two slots but for now we only care about slot comments."
 (defun virtual-comment--get-buffer-file-name ()
   "Return path from project root, nil when not a file."
   (when-let ((name (buffer-file-name)))
-    (let ((root (cdr (project-current)))
+    (let ((root (virtual-comment--get-root))
           (file-abs-path (file-truename name)))
       (if root
           (substring file-abs-path (length (file-truename root)))
@@ -303,7 +313,7 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment--get-saved-file ()
   "Return path to .ipa file at project root."
-  (let ((root (cdr (project-current))))
+  (let ((root (virtual-comment--get-root)))
     (if root
         (concat root ".evc")
       virtual-comment-default-file)))
@@ -625,7 +635,7 @@ Won't prepend new line if comment is nil"
           (line-number (match-string-no-properties 2 str)))
       (find-file-other-window (if (file-name-absolute-p file-name)
                                   file-name
-                                (expand-file-name file-name (cdr (project-current)))))
+                                (expand-file-name file-name (virtual-comment--get-root))))
       (goto-char (point-min))
       (forward-line (1- (string-to-number line-number))))))
 
@@ -746,7 +756,7 @@ Won't prepend new line if comment is nil"
           (thing-at-point 'symbol t)
           (if want-full-path
               (file-truename (buffer-file-name))
-            (file-relative-name (file-truename (buffer-file-name)) (cdr (project-current))))
+            (file-relative-name (file-truename (buffer-file-name)) (virtual-comment--get-root)))
           (line-number-at-pos)))
 
 ;;;###autoload
@@ -988,7 +998,7 @@ ROOT is project root."
   "Show comments for this file and its project."
   (interactive)
   (let ((file-name (virtual-comment--get-buffer-file-name))
-        (root (cdr (project-current))))
+        (root (virtual-comment--get-root)))
     (virtual-comment--show virtual-comment--project
                            root
                            (get-buffer-create
