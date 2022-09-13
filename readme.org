@@ -45,9 +45,10 @@ to the location of comment. =C-c C-d=
 There are no default bindings at all for these commands.
 
 * Remarks
-It's very hard to manage overlays. So this mode should be use in a sensible way.
-Only comments of files can be persisted.
-
+- It's very hard to manage overlays. So this mode should be use in a sensible
+  way. Only comments of files can be persisted.
+- From version =0.4.1= a backup of current data will be made as =.evc.bk= when data
+  is persisted
 * Test
 #+begin_src sh
 cask install

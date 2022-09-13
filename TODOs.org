@@ -406,3 +406,10 @@ check if the target buffer is open. If so trigger update on that buffer
 
 default case when handle non project files
 
+
+* prevent data loss
+the best way is to have evc data per git branch: =.ecv.branh-name=
+but it would be tedious how to transfer common data accross branch
+
+a simple solution is to create a backup file every time we persist
+
