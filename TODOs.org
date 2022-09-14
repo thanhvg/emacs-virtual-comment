@@ -405,11 +405,20 @@ delete the the comment and the target line in the buffer
 check if the target buffer is open. If so trigger update on that buffer
 
 default case when handle non project files
-
-
-* prevent data loss
+* TODO handle string-p is nil when strayed comments are stacked on top 
+* TODO prevent data loss
 the best way is to have evc data per git branch: =.ecv.branh-name=
 but it would be tedious how to transfer common data accross branch
 
-a simple solution is to create a backup file every time we persist
+** DONE a simple solution is to create a backup file every time we persist
+** never delete strayed comments
+if we can't place them then put them in a lost and found place
+** only save when data is changed
+how to tell if data is changed?
+- when you add a comment then mark a flag
+- but comments can be moved a round without user action due to file changes
 
+what now?
+- each comment emit and event on change? too complicated
+- can we diff the project data? yes we can
+- before persist data we diff the data if they are different then back up and save otherwise do nothing
