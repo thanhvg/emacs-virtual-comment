@@ -171,10 +171,20 @@ When this value is non-nil then there is a timer for
   "Project store of comments."
   (files nil
          :type hash-table
-         :documentation "hash table of file-name vs `virtual-comment-buffer-data'") 
+         :documentation "hash table of file-name vs `virtual-comment-buffer-data'")
   (count nil
          :type integer
          :documentation "reference count"))
+
+(defun virtual-comment--persited-data-p (data)
+  "Validate data load from file.
+Which is a hash table of filename vs `virtual-comment-buffer-data'"
+  (catch 'flag (maphash (lambda (filename vcbd)
+                          (or (and (stringp filename)
+                                   (virtual-comment-buffer-data-p vcbd))
+                              (throw 'flag nil)))
+                        data)
+         (throw 'flag t)))
 
 (defun virtual-comment--get-store ()
   "Get comment store.
@@ -372,19 +382,14 @@ If not found or fail, return an empty hash talbe."
   (if (file-exists-p file)
       (with-temp-buffer
         (condition-case nil
-         (progn (insert-file-contents file)
-                (read (current-buffer)))
-         (error
-          (progn
-            (message "virtual-comment error: couldn't read %s" file)
-            (make-hash-table :test 'equal)))))
+            (progn (insert-file-contents file)
+                   (let ((data (read (current-buffer))))))
+          (error
+           (progn
+             (message "virtual-comment error: couldn't read %s" file)
+             (make-hash-table :test 'equal)))))
     (message "virtual-comment: %s doesn't exist" file)
     (make-hash-table :test 'equal)))
-
-(defun virtual-comment--load ()
-  "Load stuff."
-  (setq virtual-comment--buffer-data (virtual-comment--load-data-from-file
-                                      (virtual-comment--get-saved-file))))
 
 ;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
 (defun virtual-comment--read-string-with-multiple-line (prompt pre-string exit-keyseq clear-keyseq)
@@ -395,7 +400,7 @@ CLEAR-KEYSEQ to clear text."
     (define-key keymap (kbd "RET") 'newline)
     (define-key keymap exit-keyseq 'exit-minibuffer)
     (define-key keymap clear-keyseq
-      (lambda () (interactive) (delete-region (minibuffer-prompt-end) (point-max))))
+                (lambda () (interactive) (delete-region (minibuffer-prompt-end) (point-max))))
     (read-from-minibuffer prompt pre-string keymap)))
 
 (defun virtual-comment--read-string (prompt &optional pre-string)
