@@ -90,13 +90,16 @@
 (require 'seq)
 
 (defvar-local virtual-comment--buffer-data nil
-  "Buffer comment data.")
+  "Buffer comment data.
+Lazily initialized value of `virtual-comment-buffer-data'")
 
 (defvar virtual-comment--store nil
-  "Global comment store.")
+  "Global comment store.
+Lazy singleton of `virtual-comment-store'")
 
 (defvar-local virtual-comment--project nil
-  "Project comment store.")
+  "Project comment store.
+Lazy value of `virtual-comment-project'")
 
 (defvar-local virtual-comment--is-initialized nil
   "Flag to tell if `virtual-comment--init' has already run.")
@@ -107,7 +110,7 @@ When this value is non-nil then there is a timer for
 `virtual-comment--update-data' to run in future.")
 
 (defvar virtual-comment--current-location nil
-  "A string of stored location")
+  "A string of stored (yanked) location")
 
 (defcustom virtual-comment-idle-time 1
   "Number of seconds after Emacs is idle to run a scheduled update."
@@ -179,12 +182,25 @@ When this value is non-nil then there is a timer for
 (defun virtual-comment--persited-data-p (data)
   "Validate data load from file.
 Which is a hash table of filename vs `virtual-comment-buffer-data'"
-  (catch 'flag (maphash (lambda (filename vcbd)
-                          (or (and (stringp filename)
-                                   (virtual-comment-buffer-data-p vcbd))
-                              (throw 'flag nil)))
-                        data)
-         (throw 'flag t)))
+  (and (hash-table-p data)
+       (catch 'flag
+         (maphash (lambda (filename vcbd)
+                               (or (and (stringp filename)
+                                        (virtual-comment-buffer-data-p vcbd))
+                                   (throw 'flag nil)))
+                             data)
+              (throw 'flag t))))
+
+(defun virtual-comment--project-data-changed-p (ht1 ht2)
+  "Compare two hash tables of file-name vs `virtual-comment-buffer-data'."
+  (and (= (hash-table-count ht1)
+          (hash-table-count ht2))
+       (catch 'flag (maphash (lambda (x y)
+                               (or (equal (gethash x ht2) y)
+                                   (throw 'flag nil)))
+                             ht1)
+              (throw 'flag t))))
+
 
 (defun virtual-comment--get-store ()
   "Get comment store.
@@ -378,12 +394,23 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment--load-data-from-file (file)
   "Read data from FILE.
-If not found or fail, return an empty hash talbe."
+Return the slot file of `virtual-comment-project'. If not found
+or fail, return an empty hash talbe. When data doesn't pass the
+`virtual-comment--persited-data-p' rename .evc file to
+.evc.error."
   (if (file-exists-p file)
       (with-temp-buffer
         (condition-case nil
             (progn (insert-file-contents file)
-                   (let ((data (read (current-buffer))))))
+                   (let ((data (read (current-buffer))))
+                     (if (virtual-comment--persited-data-p data)
+                         data
+                       (user-error "evc unable to parse persited data"))))
+          (user-error
+           (let ((file-error (format "%s.error" file)))
+             (rename-file file file-error t)
+             (message "Could not parse .evc, renamed it to .evc.error"))
+           (make-hash-table :test 'equal))
           (error
            (progn
              (message "virtual-comment error: couldn't read %s" file)
