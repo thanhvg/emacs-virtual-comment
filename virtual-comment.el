@@ -130,36 +130,51 @@ When this value is non-nil then there is a timer for
 (cl-defstruct (virtual-comment-unit
                (:constructor virtual-comment-unit-create)
                (:copier nil))
-  "Comment data structure.
-POINT and COMMENT are self explained TARGET is the line content on
-which the comment is."
-  point comment target)
+  "Comment data structure."
+  (point nil
+         :type integer
+         :documentation
+         "where the comment starts. It is the begin of the line")
+  (comment nil
+           :type string
+           :documentation "comment string")
+  (target nil
+          :type string
+          :documentation "line content on which the comment is."))
 
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
                (:copier nil))
-  "Store data of current buffer.
-FILENAME is file name from project root, it is not used.
-COMMENTS is list of `virtual-comment-unit'."
-  filename comments)
+  "Store data of current buffer."
+  (filename nil
+            :type string
+            :documentation "file name from project root, it is not used.")
+  (comments nil
+            :type list
+            :documentation "list of `virtual-comment-unit'"))
 
 (cl-defstruct (virtual-comment-store
                (:constructor virtual-comment-store-create)
                (:copier nil))
-  "Global store of comments.
-Slot DEFAULT is default `virtual-comment-project' for buffers
-which don't belong to a project. Slot PROJECTS is a hash table of
-project unique id (md5 of project path) to
-`virtual-comment-project'."
-  default projects)
+  "Global store of comments."
+  (default nil
+           :type record
+           :documentation
+           "Comments on files that does not belong to a project `virtual-comment-project'")
+  (projects nil
+            :type hash-table
+            :documentation "hash table of projet ID (MD5) vs `virtual-comment-project'"))
 
 (cl-defstruct (virtual-comment-project
                (:constructor virtual-comment-project-create)
                (:copier nil))
-  "Project store of comments.
-Slot files is hashtable of file-name:`virtual-comment-buffer-data'
-Slot count is reference count."
-  files count)
+  "Project store of comments."
+  (files nil
+         :type hash-table
+         :documentation "hash table of file-name vs `virtual-comment-buffer-data'") 
+  (count nil
+         :type integer
+         :documentation "reference count"))
 
 (defun virtual-comment--get-store ()
   "Get comment store.
@@ -1082,8 +1097,7 @@ of the comment string and return it's point."
   (when-let ((buff (find-buffer-visiting full-name)))
     (with-current-buffer buff
       (when-let ((ov (virtual-comment--get-overlay-at vc-point)))
-        (delete-overlay ov))
-    )))
+        (delete-overlay ov)))))
 
 (defun virtual-comment--remove-comment-from-units (comment-units point)
   "Take COMMENT-UNITS list of `virtual-comment-unit' return the filtered list.

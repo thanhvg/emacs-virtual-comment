@@ -422,3 +422,17 @@ what now?
 - each comment emit and event on change? too complicated
 - can we diff the project data? yes we can
 - before persist data we diff the data if they are different then back up and save otherwise do nothing
+*** diff data
+https://stackoverflow.com/questions/18180393/compare-hash-table-in-emacs-lisp
+
+#+begin_example elisp
+(defun hash-equal (hash1 hash2)
+  "Compare two hash tables to see whether they are equal."
+  (and (= (hash-table-count hash1)
+          (hash-table-count hash2))
+       (catch 'flag (maphash (lambda (x y)
+                               (or (equal (gethash x hash2) y)
+                                   (throw 'flag nil)))
+                             hash1)
+              (throw 'flag t))))
+#+end_example
