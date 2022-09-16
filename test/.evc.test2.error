@@ -1,0 +1,6 @@
+#s(hash-table size 65 test equal rehash-size 1.5 rehash-threshold 0.8125 data ("virtual-comment.el" #s(virtual-comment-buffer-data "virtual-comment.el" (#s(virtual-comment-unit 11998 "dump data to file" "(defun virtual-comment--persist ()
+") #s(virtual-comment-unit 12327 "virtual-comment-persist | virtual-comment.el:324" "(defun virtual-comment--take-non-nil (project-files-slot)
+") #s(virtual-comment-unit 14835 "how to get empty overlays
+without the use of save excursion?" "(defun virtual-comment--get-overlay-at (point)
+") #s(virtual-comment-unit 42765 "should be cheap to run" "(add-hook 'kill-emacs-hook #'virtual-comment--emacs-kill-hook-handler)
+"))) 12370 #s(virtual-comment-buffer-data nil nil)))

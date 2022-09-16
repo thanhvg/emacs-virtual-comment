@@ -179,28 +179,86 @@ When this value is non-nil then there is a timer for
          :type integer
          :documentation "reference count"))
 
-(defun virtual-comment--persited-data-p (data)
+(cl-defgeneric virtual-comment-equal (vc1 vc2)
+  "Compare if two virtual-comment structures are equal.")
+
+(cl-defmethod virtual-comment-equal
+  ((vc1 virtual-comment-unit) (vc2 virtual-comment-unit))
+  (and
+   (equal
+    (virtual-comment-unit-point vc1)
+    (virtual-comment-unit-point vc2))
+   (equal
+    (virtual-comment-unit-comment vc1)
+    (virtual-comment-unit-comment vc2))
+   (equal
+    (virtual-comment-unit-target vc1)
+    (virtual-comment-unit-target vc2))))
+
+(cl-defmethod virtual-comment-equal
+  ;; ((vc1 (head virtual-comment-unit)) (vc2 (head virtual-comment-unit)))
+  ((vc1 list) (vc2 list))
+  (and
+   (equal
+    (length vc1)
+    (length vc2))
+   (let* ((sort-fn (lambda (a b) (< (virtual-comment-unit-point a)
+                                    (virtual-comment-unit-point b))))
+          (sorted-vc1 (sort vc1 sort-fn))
+          (sorted-vc2 (sort vc2 sort-fn))
+          (head1 (car sorted-vc1))
+          (head2 (car sorted-vc2)))
+     (while (and sorted-vc1
+                 sorted-vc2
+                 (virtual-comment-equal head1 head2))
+       (setq sorted-vc1 (cdr sorted-vc1))
+       (setq sorted-vc2 (cdr sorted-vc2))
+       (setq head1 (car sorted-vc1))
+       (setq head2 (car sorted-vc2)))
+     (if sorted-vc1
+         nil
+       t))))
+
+(cl-defmethod virtual-comment-equal
+  ((vc1 virtual-comment-buffer-data) (vc2 (eql nil)))
+  nil)
+
+(cl-defmethod virtual-comment-equal
+  ((vc1 (eql nil)) (vc2 virtual-comment-buffer-data))
+  nil)
+
+(cl-defmethod virtual-comment-equal
+  ((vc1 virtual-comment-buffer-data) (vc2 virtual-comment-buffer-data))
+  (and (equal
+        (virtual-comment-buffer-data-filename vc1)
+        (virtual-comment-buffer-data-filename vc2))
+       (virtual-comment-equal
+        (virtual-comment-buffer-data-comments vc1)
+        (virtual-comment-buffer-data-comments vc2))))
+
+(cl-defmethod virtual-comment-equal
+  ((ht1 hash-table) (ht2 hash-table))
+  "Compare two hash tables of file-name vs `virtual-comment-buffer-data'."
+  (and (= (hash-table-count ht1)
+          (hash-table-count ht2))
+       (catch 'flag (maphash (lambda (x y)
+                               (unless (virtual-comment-equal (gethash x ht2) y)
+                                 (throw 'flag nil)))
+                             ht1)
+              t)))
+
+(defun virtual-comment--persisted-data-p (data)
   "Validate data load from file.
 Which is a hash table of filename vs `virtual-comment-buffer-data'"
   (and (hash-table-p data)
        (catch 'flag
          (maphash (lambda (filename vcbd)
-                               (or (and (stringp filename)
-                                        (virtual-comment-buffer-data-p vcbd))
-                                   (throw 'flag nil)))
-                             data)
-              (throw 'flag t))))
-
-(defun virtual-comment--project-data-changed-p (ht1 ht2)
-  "Compare two hash tables of file-name vs `virtual-comment-buffer-data'."
-  (and (= (hash-table-count ht1)
-          (hash-table-count ht2))
-       (catch 'flag (maphash (lambda (x y)
-                               (or (equal (gethash x ht2) y)
-                                   (throw 'flag nil)))
-                             ht1)
-              (throw 'flag t))))
-
+                    (unless (and (or (stringp filename) (equal filename nil))
+                                 (or (virtual-comment-buffer-data-p vcbd) (equal vcbd nil)))
+                      (throw 'flag nil)))
+                  data)
+         ;; (throw 'flag t)
+         t)))
 
 (defun virtual-comment--get-store ()
   "Get comment store.
@@ -370,11 +428,13 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment--persist ()
   "Persist project data to file."
-  (let ((data (virtual-comment--get-project))
-        (file (virtual-comment-get-evc-file)))
-    (virtual-comment--dump-data-to-file (virtual-comment-project-files
-                                         data)
-                                        file)))
+  (let* ((new-data (virtual-comment--take-non-nil
+                    (virtual-comment-project-files (virtual-comment--get-project))))
+         (file (virtual-comment-get-evc-file))
+         (org-data (virtual-comment--load-data-from-file file)))
+    (unless (virtual-comment-equal new-data org-data)
+      (virtual-comment--dump-data-to-file new-data
+                                          file))))
 
 (defun virtual-comment--take-non-nil (project-files-slot)
   "Create new hash table from PROJECT-FILES-SLOT and remove empty value."
@@ -396,14 +456,14 @@ There are two slots but for now we only care about slot comments."
   "Read data from FILE.
 Return the slot file of `virtual-comment-project'. If not found
 or fail, return an empty hash talbe. When data doesn't pass the
-`virtual-comment--persited-data-p' rename .evc file to
+`virtual-comment--persisted-data-p' rename .evc file to
 .evc.error."
   (if (file-exists-p file)
       (with-temp-buffer
-        (condition-case nil
+        (condition-case err
             (progn (insert-file-contents file)
                    (let ((data (read (current-buffer))))
-                     (if (virtual-comment--persited-data-p data)
+                     (if (virtual-comment--persisted-data-p data)
                          data
                        (user-error "evc unable to parse persited data"))))
           (user-error
@@ -413,7 +473,7 @@ or fail, return an empty hash talbe. When data doesn't pass the
            (make-hash-table :test 'equal))
           (error
            (progn
-             (message "virtual-comment error: couldn't read %s" file)
+             (message "virtual-comment error: couldn't read %s %s %s" file (car err) (cdr err))
              (make-hash-table :test 'equal)))))
     (message "virtual-comment: %s doesn't exist" file)
     (make-hash-table :test 'equal)))
