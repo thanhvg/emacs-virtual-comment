@@ -646,9 +646,10 @@ Decrease counter, check if should persist data."
     (cl-decf (virtual-comment-project-count data))
     ;; persistence maybe
     (when (= 0 (virtual-comment-project-count data))
-      (message
-       "virtual-comment: Leaving %s"
-       (virtual-comment--get-root))
+      ;; debug message
+      ;; (message
+      ;;  "virtual-comment: Leaving %s"
+      ;;  (virtual-comment--get-root))
       (virtual-comment--persist)
       ;; remove project files from store
       (virtual-comment--remove-project))))
