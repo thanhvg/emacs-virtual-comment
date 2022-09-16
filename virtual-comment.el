@@ -433,12 +433,13 @@ There are two slots but for now we only care about slot comments."
          (file (virtual-comment-get-evc-file))
          (org-data (virtual-comment--load-data-from-file file)))
     (unless (virtual-comment-equal new-data org-data)
+      (message "virtual-comment: Saving %s" file)
       (virtual-comment--dump-data-to-file new-data
                                           file))))
 
 (defun virtual-comment--take-non-nil (project-files-slot)
   "Create new hash table from PROJECT-FILES-SLOT and remove empty value."
-  (let ((my-hashtable (make-hash-table)))
+  (let ((my-hashtable (make-hash-table :test 'equal)))
     (maphash (lambda (k v) (when (virtual-comment-buffer-data-comments v)
                              (puthash k v my-hashtable)))
              project-files-slot)
@@ -452,7 +453,7 @@ There are two slots but for now we only care about slot comments."
     (virtual-comment--dump-data-to-file
      (virtual-comment--take-non-nil (virtual-comment-project-files data)) file)))
 
-(defun virtual-comment--load-data-from-file (file)
+(defun virtual-comment--load-data-from-file (file &optional verbose)
   "Read data from FILE.
 Return the slot file of `virtual-comment-project'. If not found
 or fail, return an empty hash talbe. When data doesn't pass the
@@ -469,13 +470,13 @@ or fail, return an empty hash talbe. When data doesn't pass the
           (user-error
            (let ((file-error (format "%s.error" file)))
              (rename-file file file-error t)
-             (message "Could not parse .evc, renamed it to .evc.error"))
+             (when verbose (message "Could not parse .evc, renamed it to .evc.error")))
            (make-hash-table :test 'equal))
           (error
            (progn
-             (message "virtual-comment error: couldn't read %s %s %s" file (car err) (cdr err))
+             (when verbose (message "virtual-comment error: couldn't read %s %s %s" file (car err) (cdr err)))
              (make-hash-table :test 'equal)))))
-    (message "virtual-comment: %s doesn't exist" file)
+    (when verbose (message "virtual-comment: %s doesn't exist" file))
     (make-hash-table :test 'equal)))
 
 ;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
@@ -640,8 +641,8 @@ Decrease counter, check if should persist data."
     ;; persistence maybe
     (when (= 0 (virtual-comment-project-count data))
       (message
-       "virtual-comment: persisting virtual comments in %s"
-       (virtual-comment-get-evc-file))
+       "virtual-comment: Leaving %s"
+       (virtual-comment--get-root))
       (virtual-comment--persist)
       ;; remove project files from store
       (virtual-comment--remove-project))))

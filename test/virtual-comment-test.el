@@ -4,6 +4,9 @@
   (message "Hello world")
   (should t))
 
+
+virtual-comment--buffer-data
+
 (condition-case err
     (unless (virtual-comment--persisted-data-p
              (with-temp-buffer
@@ -100,6 +103,15 @@
   `(,(virtual-comment-unit-create :point 10 :comment "foofoo" :target "bar")
     ,(virtual-comment-unit-create :point 11 :comment "foo" :target "bar")))
  nil)
+
+
+(virtual-comment--get-buffer-data-in-project
+ (virtual-comment--get-project))
+
+(gethash 
+ (virtual-comment--get-buffer-file-name)
+ (virtual-comment-project-files (virtual-comment--get-project)))
+
 
 ;; virtual-comment--project
 ;; virtual-comment--buffer-data
