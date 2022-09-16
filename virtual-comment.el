@@ -470,11 +470,11 @@ or fail, return an empty hash talbe. When data doesn't pass the
           (user-error
            (let ((file-error (format "%s.error" file)))
              (rename-file file file-error t)
-             (when verbose (message "Could not parse .evc, renamed it to .evc.error")))
+             (message "Could not parse .evc, renamed it to .evc.error"))
            (make-hash-table :test 'equal))
           (error
            (progn
-             (when verbose (message "virtual-comment error: couldn't read %s %s %s" file (car err) (cdr err)))
+             (message "virtual-comment error: couldn't read %s %s %s" file (car err) (cdr err))
              (make-hash-table :test 'equal)))))
     (when verbose (message "virtual-comment: %s doesn't exist" file))
     (make-hash-table :test 'equal)))
