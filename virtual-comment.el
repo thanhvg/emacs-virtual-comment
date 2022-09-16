@@ -434,8 +434,7 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment--persist ()
   "Persist project data to file."
-  (let* ((new-data (virtual-comment--take-non-nil
-                    (virtual-comment-project-files (virtual-comment--get-project))))
+  (let* ((new-data (virtual-comment-project-files (virtual-comment--get-project)))
          (file (virtual-comment-get-evc-file))
          (org-data (virtual-comment--load-data-from-file file)))
     (unless (virtual-comment-equal new-data org-data)
@@ -457,6 +456,7 @@ There are two slots but for now we only care about slot comments."
   (let ((data (virtual-comment--get-project))
         (file (virtual-comment-get-evc-file)))
     (virtual-comment--dump-data-to-file
+     ;; need to filter nil data because this is a manual call
      (virtual-comment--take-non-nil (virtual-comment-project-files data)) file)))
 
 (defun virtual-comment--load-data-from-file (file &optional verbose)
@@ -1189,7 +1189,7 @@ of the comment string and return it's point."
     (virtual-comment--remove-comment vc-point
                                      file-name
                                      (virtual-comment--get-project))
-    ;; if buffer is live remove the the comment ov form it
+    ;; if buffer is live remove the the comment ov from it
     (virtual-comment--remove-comment-from-file-buffer-maybe vc-point full-path)))
 
 (defun virtual-comment--remove-comment-from-file-buffer-maybe (vc-point full-name)
