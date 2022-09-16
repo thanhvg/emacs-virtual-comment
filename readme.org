@@ -47,7 +47,13 @@ There are no default bindings at all for these commands.
 * Remarks
 - It's very hard to manage overlays. So this mode should be use in a sensible
   way. Only comments of files can be persisted.
-- From version =0.4.1= a backup of current data will be made as =.evc.bk= when data
+* Changes
+** 0.5
+- won't create =.evc= if there is no comment for the project
+- only save data if there is change
+- if can't parse the =.evc= file copy it to =.evc.error=
+** 0.4 
+- a backup of current data will be made as =.evc.bk= when data
   is persisted
 * Test
 #+begin_src sh

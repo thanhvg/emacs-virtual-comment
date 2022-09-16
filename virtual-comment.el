@@ -71,6 +71,11 @@
 ;; https://www.emacswiki.org/emacs/InPlaceAnnotations
 ;;
 ;; Changelog
+;; 2022-09-16
+;;  0.5.0
+;;  - won't create .evc if there is no comment for the project
+;;  - only save data if there is change
+;;  - if can't parse the evc file copy it to .evc.error
 ;; 2022-09-12
 ;;  0.4.1 back up to .evc.bk when saving data
 ;; 2022-02-28:
@@ -81,13 +86,14 @@
 ;;  0.02 add location/reference
 
 ;;; Code:
+(require 'cl-generic)
 (require 'cl-lib)
-(require 'project)
-(require 'subr-x)
 (require 'outline)
-(require 'simple)
-(require 'thingatpt)
+(require 'project)
 (require 'seq)
+(require 'simple)
+(require 'subr-x)
+(require 'thingatpt)
 
 (defvar-local virtual-comment--buffer-data nil
   "Buffer comment data.

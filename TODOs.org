@@ -413,7 +413,9 @@ but it would be tedious how to transfer common data accross branch
 ** DONE a simple solution is to create a backup file every time we persist
 ** never delete strayed comments
 if we can't place them then put them in a lost and found place
-** only save when data is changed
+** DONE only save when data is changed
+solution: diff data and validate saved data
+
 how to tell if data is changed?
 - when you add a comment then mark a flag
 - but comments can be moved a round without user action due to file changes
