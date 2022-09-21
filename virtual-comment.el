@@ -3,7 +3,7 @@
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.4.1
+;; Version: 0.5.1
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -71,6 +71,10 @@
 ;; https://www.emacswiki.org/emacs/InPlaceAnnotations
 ;;
 ;; Changelog
+;; 2022-09-20
+;;  0.5.1
+;;  - bug fix: check for evc existing before backup
+;;  - actually update version
 ;; 2022-09-16
 ;;  0.5.0
 ;;  - won't create .evc if there is no comment for the project
@@ -427,7 +431,8 @@ There are two slots but for now we only care about slot comments."
 
 (defun virtual-comment--dump-data-to-file (data file)
   "Dump DATA to .evc FILE."
-  (copy-file file (format "%s.bk" file) t)
+  (when (file-exists-p file)
+   (copy-file file (format "%s.bk" file) t))
   (with-temp-file file
     (let ((standard-output (current-buffer)))
       (prin1 data))))
