@@ -98,7 +98,6 @@
 (require 'simple)
 (require 'subr-x)
 (require 'thingatpt)
-(require 'vc-git)
 
 (defvar-local virtual-comment--buffer-data nil
   "Buffer comment data.
@@ -140,23 +139,6 @@ Used instead of `virtual-comment-face' when the buffer changed
 enough that `virtual-comment--repair-overlay-maybe' had to guess
 at (or gave up on) the comment's new location; see the
 `unanchored' slot of `virtual-comment-unit'."
-  :group 'virtual-comment)
-
-(defcustom virtual-comment-use-git-reanchoring t
-  "When non-nil, try git history before falling back to text search.
-After the buffer has changed since the comment's location was
-last confirmed -- most commonly because the file was updated
-outside this Emacs session, e.g. by `git pull' or switching
-branches -- relocating purely by searching for matching text can
-land on the wrong occurrence of a common line, or fail outright
-if the line itself was edited.  When this is non-nil and the
-file is in a git repository, `virtual-comment--resolve-target'
-first tries to map the comment's old line forward through the
-commits made since, via `git diff', which is unambiguous for any
-line outside a hunk that was itself changed.  Text search is
-still used as the fallback when git can't help (no git repo, no
-recorded commit, or the line falls inside a changed hunk)."
-  :type 'boolean
   :group 'virtual-comment)
 
 (defcustom virtual-comment-default-file "~/.evc"
@@ -214,30 +196,16 @@ is confidently confirmed, never on a mere guess.")
                 :documentation
                 "line content directly below TARGET, \"\" if TARGET was the
 last line of the buffer.  See ABOVE-TARGET.")
-  (commit nil
-          :type string
-          :documentation
-          "git commit hash the file was at when POINT/TARGET were last
-confidently confirmed, nil if the file isn't in a git repo.
-Used to relocate the comment via `git diff' when the file has
-been changed by commits made outside this Emacs session (e.g. a
-`git pull'); see `virtual-comment--resolve-target-via-git'.")
-  (commit-line nil
-               :type integer
-               :documentation
-               "1-based line number of TARGET as of COMMIT.  Kept in step with
-COMMIT so a later `git diff COMMIT..HEAD' can map it forward
-even after several separate pulls/rebases.")
   (unanchored nil
               :type boolean
               :documentation
               "non-nil when the last repair attempt could not confidently
 relocate this comment: either TARGET no longer appears anywhere
 in the buffer, or it appears more than once and even the
-surrounding context/git history couldn't disambiguate it, so
-POINT is only a guess (nearest occurrence to the last known
-location).  Surfaced with `virtual-comment-unanchored-face' and
-in `virtual-comment-show' rather than silently trusted."))
+surrounding context couldn't disambiguate it, so POINT is only a
+guess (nearest occurrence to the last known location).  Surfaced
+with `virtual-comment-unanchored-face' and in
+`virtual-comment-show' rather than silently trusted."))
 
 (cl-defstruct (virtual-comment-buffer-data
                (:constructor virtual-comment-buffer-data-create)
@@ -294,12 +262,6 @@ in `virtual-comment-show' rather than silently trusted."))
    (equal
     (virtual-comment-unit-below-target vc1)
     (virtual-comment-unit-below-target vc2))
-   (equal
-    (virtual-comment-unit-commit vc1)
-    (virtual-comment-unit-commit vc2))
-   (equal
-    (virtual-comment-unit-commit-line vc1)
-    (virtual-comment-unit-commit-line vc2))
    (equal
     (virtual-comment-unit-unanchored vc1)
     (virtual-comment-unit-unanchored vc2))))
@@ -657,7 +619,7 @@ When SHOULD-SORT is non-nil sort by point."
 
 (defun virtual-comment--line-at-point ()
   "Reinvent `thing-at-point line'."
-  (buffer-substring (line-beginning-position) (line-end-position)))
+  (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
 
 (defun virtual-comment--line-relative (offset)
   "Return the buffer line OFFSET lines from point, or \"\" past a boundary.
@@ -678,25 +640,6 @@ than possibly-already-wrong text."
     (goto-char (overlay-start ov))
     (overlay-put ov 'virtual-comment-above-target (virtual-comment--line-relative -1))
     (overlay-put ov 'virtual-comment-below-target (virtual-comment--line-relative 1))))
-
-(defun virtual-comment--set-git-props (ov)
-  "Record the current git HEAD commit and line number for OV's position.
-Like `virtual-comment--set-context-props', only called when OV's
-location has just been freshly confirmed correct.  No-ops
-outside a git repository or when the file isn't tracked."
-  (when-let* ((file (buffer-file-name))
-              (repo-root (virtual-comment--git-repo-root file))
-              (commit (virtual-comment--git-head-commit repo-root)))
-    (overlay-put ov 'virtual-comment-commit commit)
-    (overlay-put ov 'virtual-comment-commit-line
-                 (save-excursion (goto-char (overlay-start ov)) (line-number-at-pos)))))
-
-(defun virtual-comment--confirm-location (ov)
-  "Record OV's current location as a known-good anchor.
-Convenience wrapper calling both `virtual-comment--set-context-props'
-and `virtual-comment--set-git-props'; see either for details."
-  (virtual-comment--set-context-props ov)
-  (virtual-comment--set-git-props ov))
 
 (defun virtual-comment--search-all (s)
   "Return every fuzzy match point of S in the buffer, ignoring whitespace.
@@ -763,123 +706,12 @@ than one line.  Returns a plist (:point POINT :status STATUS):
           (list :point (virtual-comment--closest-point matches hint-point)
                 :status 'nearest)))))))
 
-(defun virtual-comment--git-executable ()
-  "Return the path to the git executable, or nil if not found."
-  (executable-find "git"))
-
-(defun virtual-comment--git-repo-root (file)
-  "Return the git repository root containing FILE, or nil.
-Deliberately uses `vc-git-root' rather than `virtual-comment--get-root'
-\(which goes through `project.el'\): the two can disagree, and
-everything here needs to agree specifically with what `git diff'
-itself would consider the repository root."
-  (when (and file (virtual-comment--git-executable))
-    (vc-git-root file)))
-
-(defun virtual-comment--git-head-commit (repo-root)
-  "Return the current HEAD commit hash for REPO-ROOT, or nil."
-  (when (virtual-comment--git-executable)
-    (let ((default-directory repo-root))
-      (with-temp-buffer
-        (when (zerop (call-process "git" nil t nil "rev-parse" "HEAD"))
-          (string-trim (buffer-string)))))))
-
-(defun virtual-comment--git-relative-file (file repo-root)
-  "Return FILE's path relative to REPO-ROOT, or nil if git doesn't know it.
-Used both to check the file is actually tracked and to get the
-exact path `git diff' expects."
-  (when (virtual-comment--git-executable)
-    (let ((default-directory repo-root))
-      (with-temp-buffer
-        (when (zerop (call-process "git" nil t nil "ls-files" "--full-name" "--" file))
-          (let ((out (string-trim (buffer-string))))
-            (unless (string-empty-p out) out)))))))
-
-(defun virtual-comment--git-diff-hunks (old-commit rel-file repo-root)
-  "Return unified-diff hunks for REL-FILE between OLD-COMMIT and the worktree.
-Each hunk is (OLD-START OLD-COUNT NEW-START NEW-COUNT), in file
-order, as parsed from `git diff's `@@ -a,b +c,d @@' headers.
-Does not use `-M'/rename detection: a renamed file shows as a
-full delete elsewhere and won't be found here at all, which is a
-known limitation -- callers just fall back to text search."
-  (let ((default-directory repo-root))
-    (with-temp-buffer
-      (when (zerop (call-process "git" nil t nil "diff" "--unified=0"
-                                  old-commit "--" rel-file))
-        (goto-char (point-min))
-        (let (hunks)
-          (while (re-search-forward
-                  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
-                  nil t)
-            (push (list (string-to-number (match-string 1))
-                        (if (match-string 2) (string-to-number (match-string 2)) 1)
-                        (string-to-number (match-string 3))
-                        (if (match-string 4) (string-to-number (match-string 4)) 1))
-                  hunks))
-          (nreverse hunks))))))
-
-(defun virtual-comment--git-remap-line (old-line hunks)
-  "Map 1-based OLD-LINE through HUNKS to its current line number.
-Lines outside every hunk simply accumulate each earlier hunk's
-line-count delta.  Returns nil, rather than a guess, when
-OLD-LINE falls inside a hunk's own changed range (old-count > 0)
--- that line may have been edited itself, which text/context
-search is better placed to judge than a hunk header is."
-  (let ((offset 0))
-    (catch 'virtual-comment--ambiguous
-      (dolist (hunk hunks)
-        (let ((old-start (nth 0 hunk))
-              (old-count (nth 1 hunk))
-              (new-count (nth 3 hunk)))
-          (cond
-           ;; pure insertion: OLD-START itself is untouched, only
-           ;; lines strictly after it shift
-           ((zerop old-count)
-            (when (> old-line old-start)
-              (setq offset (+ offset new-count))))
-           ;; hunk is further down the file than OLD-LINE: nothing to
-           ;; do yet, keep walking
-           ((< old-line old-start) nil)
-           ;; OLD-LINE falls inside this hunk's own changed range
-           ((< old-line (+ old-start old-count))
-            (throw 'virtual-comment--ambiguous nil))
-           ;; hunk is fully before OLD-LINE: accumulate its delta
-           (t
-            (setq offset (+ offset (- new-count old-count)))))))
-      (+ old-line offset))))
-
-(defun virtual-comment--resolve-target-via-git (commit commit-line rel-file repo-root)
-  "Try to relocate a comment using git history.
-COMMIT/COMMIT-LINE are the commit and 1-based line number
-recorded the last time the comment's location was confirmed.
-Returns a plist like `virtual-comment--resolve-target-via-text'
-with :status `git', or nil when git can't help: HEAD hasn't
-moved since COMMIT, the diff can't be read, or COMMIT-LINE falls
-inside a hunk that was itself changed."
-  (when-let* ((head (virtual-comment--git-head-commit repo-root)))
-    (unless (string= head commit)
-      (let* ((hunks (virtual-comment--git-diff-hunks commit rel-file repo-root))
-             (new-line (virtual-comment--git-remap-line commit-line hunks)))
-        (when new-line
-          (save-excursion
-            (goto-char (point-min))
-            (forward-line (1- new-line))
-            (list :point (line-beginning-position) :status 'git)))))))
-
-(defun virtual-comment--resolve-target (hint-point target above-target below-target
-                                        &optional commit commit-line rel-file repo-root)
+(defun virtual-comment--resolve-target (hint-point target above-target below-target)
   "Resolve where a comment's TARGET line now is.
-Tries `virtual-comment--resolve-target-via-git' first when COMMIT,
-COMMIT-LINE, REL-FILE and REPO-ROOT are all available and
-`virtual-comment-use-git-reanchoring' is non-nil, since git
-history is a more reliable signal than guessing from text alone;
-falls back to `virtual-comment--resolve-target-via-text'
-otherwise or when the git-based attempt can't confidently place
-it.  See either for the shape of the return value."
-  (or
-   (when (and virtual-comment-use-git-reanchoring commit commit-line rel-file repo-root)
-     (virtual-comment--resolve-target-via-git commit commit-line rel-file repo-root))
-   (virtual-comment--resolve-target-via-text hint-point target above-target below-target)))
+Thin wrapper around `virtual-comment--resolve-target-via-text',
+kept as its own entry point in case another resolution strategy
+is added later."
+  (virtual-comment--resolve-target-via-text hint-point target above-target below-target))
 
 (defun virtual-comment--repair-overlay-maybe (ov &optional make-comment-unit)
   "Re-align comment overlay OV if necessary.
@@ -888,14 +720,14 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'.
 If OV's line still reads the same as when it was last confirmed,
 only its bounds/display are refreshed.  Otherwise
 `virtual-comment--resolve-target' is used to try to find where
-the line went; a confident match (`unique', `context', or `git')
-moves OV there and re-confirms its context/git anchors for next
-time.  A mere guess (`nearest') moves OV too, for display
-purposes, but leaves its stored fingerprint untouched (so a
-later, better-informed repair can still recover) and flags it
-unanchored.  If the line can't be found at all (`not-found'), OV
-is left exactly where it was rather than silently drifting to
-whatever now happens to be there, and is likewise flagged."
+the line went; a confident match (`unique' or `context') moves OV
+there and re-confirms its context fingerprint for next time.  A
+mere guess (`nearest') moves OV too, for display purposes, but
+leaves its stored fingerprint untouched (so a later, better
+positioned repair can still recover) and flags it unanchored.  If
+the line can't be found at all (`not-found'), OV is left exactly
+where it was rather than silently drifting to whatever now
+happens to be there, and is likewise flagged."
   (save-excursion
     (goto-char (overlay-start ov))
     (let ((org-target (overlay-get ov 'virtual-comment-target))
@@ -904,23 +736,17 @@ whatever now happens to be there, and is likewise flagged."
           (overlay-put ov 'virtual-comment-unanchored nil)
         (let* ((above (or (overlay-get ov 'virtual-comment-above-target) ""))
                (below (or (overlay-get ov 'virtual-comment-below-target) ""))
-               (commit (overlay-get ov 'virtual-comment-commit))
-               (commit-line (overlay-get ov 'virtual-comment-commit-line))
-               (file (buffer-file-name))
-               (repo-root (and commit file (virtual-comment--git-repo-root file)))
-               (rel-file (and repo-root (virtual-comment--git-relative-file file repo-root)))
                (resolution (virtual-comment--resolve-target
-                            (overlay-start ov) org-target above below
-                            commit commit-line rel-file repo-root))
+                            (overlay-start ov) org-target above below))
                (found (plist-get resolution :point))
                (status (plist-get resolution :status)))
           (cond
-           ((memq status '(unique context git))
+           ((memq status '(unique context))
             (goto-char found)
             (move-overlay ov (line-beginning-position) (line-end-position))
             (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))
             (overlay-put ov 'virtual-comment-unanchored nil)
-            (virtual-comment--confirm-location ov))
+            (virtual-comment--set-context-props ov))
            ((eq status 'nearest)
             (goto-char found)
             (move-overlay ov (line-beginning-position) (line-end-position))
@@ -943,8 +769,6 @@ whatever now happens to be there, and is likewise flagged."
      :target (overlay-get ov 'virtual-comment-target)
      :above-target (overlay-get ov 'virtual-comment-above-target)
      :below-target (overlay-get ov 'virtual-comment-below-target)
-     :commit (overlay-get ov 'virtual-comment-commit)
-     :commit-line (overlay-get ov 'virtual-comment-commit-line)
      :unanchored (overlay-get ov 'virtual-comment-unanchored))))
 
 ;;;###autoload
@@ -1093,10 +917,6 @@ flag a comment whose location is only a guess; see
                      (virtual-comment-unit-above-target unit))
         (overlay-put ov 'virtual-comment-below-target
                      (virtual-comment-unit-below-target unit))
-        (overlay-put ov 'virtual-comment-commit
-                     (virtual-comment-unit-commit unit))
-        (overlay-put ov 'virtual-comment-commit-line
-                     (virtual-comment-unit-commit-line unit))
         (overlay-put ov 'virtual-comment-unanchored
                      (virtual-comment-unit-unanchored unit))
         (when (virtual-comment-unit-unanchored unit)
@@ -1117,7 +937,7 @@ Won't prepend new line if comment is nil"
          (ov (if org-comment (virtual-comment--get-overlay-at point)
                (make-overlay point (line-end-position) nil t nil))))
     (virtual-comment--ov-ensure ov comment target indent)
-    (virtual-comment--confirm-location ov)
+    (virtual-comment--set-context-props ov)
     (virtual-comment--update-data-async-maybe)))
 
 ;;;###autoload
@@ -1178,7 +998,7 @@ Won't prepend new line if comment is nil"
               (if (> (length comment) 0)
                   (progn
                     (virtual-comment--ov-ensure ov comment target indent)
-                    (virtual-comment--confirm-location ov))
+                    (virtual-comment--set-context-props ov))
                 (unless org-comment
                   (delete-overlay ov)))
               (virtual-comment--update-data-async-maybe))))
@@ -1288,7 +1108,7 @@ recent first."
       (overlay-put ov 'virtual-comment-target target)
       (overlay-put ov 'virtual-comment-unanchored nil)
       (move-overlay ov point (line-end-position))
-      (virtual-comment--confirm-location ov))))
+      (virtual-comment--set-context-props ov))))
 
 ;;;###autoload
 (defun virtual-comment-paste ()

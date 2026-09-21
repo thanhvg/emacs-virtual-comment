@@ -438,3 +438,76 @@ https://stackoverflow.com/questions/18180393/compare-hash-table-in-emacs-lisp
                              hash1)
               (throw 'flag t))))
 #+end_example
+* DONE relocate comments via surrounding context instead of guessing
+CLOSED: [2026-09-20 Sun]
+extends "handle comment when its line moves is a big headache" above, and
+is the fix for "never delete strayed comments" and part of "prevent data
+loss": the old repair function (virtual-comment--repair-overlay-maybe)
+only ever searched for the *first* fuzzy match of target in the whole
+buffer, and if nothing matched at all it still silently accepted whatever
+text happened to be at the stale point as correct. two concrete problems
+came from that:
+- target matching more than one line (}, return nil, blank lines...)
+  always snapped to whichever occurrence came first, not the one nearest
+  where the comment actually was
+- if target no longer existed anywhere (line edited or deleted), repair
+  had no way to say so, it just pretended the current wrong line was
+  right, so wrong locations spread quietly and nobody could tell
+
+(a first pass at this also tried using git history, walking a recorded
+commit/line forward through `git diff' hunks when text alone couldn't
+decide. dropped it before merging, too heavy-handed for what it bought:
+a whole diff-hunk parser and a new external-process dependency just to
+help the rare case where context lines don't already disambiguate. text
++ context covers the common cases fine on its own.)
+
+** design
+each virtual-comment-unit now carries a small fingerprint instead of just
+target:
+- above-target, below-target: the lines that used to border target, used
+  to disambiguate it when it matches more than one place
+- unanchored: t when the last repair could only guess, or found nothing
+
+resolution in virtual-comment--resolve-target (currently just a thin
+wrapper around virtual-comment--resolve-target-via-text, kept as its own
+entry point in case another strategy is worth adding later):
+fuzzy-match target against the whole buffer (virtual-comment--search-all,
+no longer stopping at the first hit)
+- exactly one match, use it
+- more than one, filter to whichever also has matching above/below
+  neighbors (virtual-comment--neighbor-line-matches-p)
+- still ambiguous, fall back to whichever match sits closest to the
+  comment's last known position (virtual-comment--closest-point), and
+  flag it unanchored
+- no match anywhere, leave the overlay exactly where it was (do not
+  silently drift) and flag it unanchored
+
+only a confident resolution (unique or context) is allowed to overwrite
+the stored fingerprint. a nearest guess moves the overlay for display but
+keeps the old fingerprint intact, so a later repair with better
+information can still recover the real spot instead of compounding a
+wrong guess.
+
+unanchored comments get virtual-comment-unanchored-face on the overlay
+and an [UNANCHORED] marker in virtual-comment-show, instead of being
+silently right or silently wrong with no way to tell which.
+
+** gotcha found along the way: struct is read back positionally
+cl-defstruct records print/read positionally
+(#s(virtual-comment-unit 1 "hi" "line"), not by slot name), so adding
+these fields would break reading an old .evc the moment a new slot's
+accessor got called (args-out-of-range). virtual-comment-unit--upgrade
+pads an old, shorter record to the current shape on load
+(virtual-comment--upgrade-persisted-data). worth remembering for any
+future struct field addition, not just this one.
+
+** known limitations / not done here
+- still just text-based: a line that was itself edited (not moved) will
+  usually show up as "not found" rather than "found, but changed" -
+  revisit git-based history matching later if this turns out to matter
+  in practice, scoped down (e.g. only for the exact commit boundary
+  case) rather than the general hunk-walking version that got cut here
+- doesn't touch "use notify to listen to change in evc file" above, that
+  is about the .evc file itself changing under us (a teammate's git
+  pull racing our own save), a different problem from a single comment's
+  line moving inside a file we already have open
