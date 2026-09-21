@@ -137,8 +137,28 @@ When this value is non-nil then there is a timer for
   :type 'string
   :group 'virtual-comment)
 
-(defvar virtual-comment-deleted-overlay nil
-  "Reference to the overlay deleted.")
+(defcustom virtual-comment-backup-count 3
+  "Number of rotated backup generations to keep for the .evc file.
+Each time data is persisted, the previous backup becomes
+FILE.bk.1, the one before that FILE.bk.2, and so on, up to this
+many generations; older ones are discarded.  Set to 0 to disable
+rotation and keep only the single FILE.bk as before."
+  :type 'integer
+  :group 'virtual-comment)
+
+(defcustom virtual-comment-deleted-overlay-ring-size 20
+  "Maximum number of deleted comments kept for `virtual-comment-paste'."
+  :type 'integer
+  :group 'virtual-comment)
+
+(defvar virtual-comment-deleted-overlays nil
+  "Stack of recently deleted comment overlays, most recent first.
+Each `virtual-comment-delete' pushes onto this list (capped at
+`virtual-comment-deleted-overlay-ring-size'); each
+`virtual-comment-paste' pops the most recent one off and
+restores it.  Formerly a single overlay slot
+\(`virtual-comment-deleted-overlay'), which meant a second delete
+silently discarded the first.")
 
 (cl-defstruct (virtual-comment-unit
                (:constructor virtual-comment-unit-create)
@@ -367,15 +387,6 @@ If not found create it."
 There are two slots but for now we only care about slot comments."
   (not (virtual-comment-buffer-data-comments buffer-data)))
 
-;; (defun virtual-comment--ovs-to-cmts (ovs)
-;;   "Maps overlay OVS list to list of `virtual-comment-unit'."
-;;   (mapcar (lambda (ov)
-;;             (virtual-comment-unit-create
-;;              :point (overlay-start ov)
-;;              :comment (overlay-get ov 'virtual-comment)
-;;              :target (overlay-get ov 'virtual-comment-target)))
-;;           ovs))
-
 (defun virtual-comment--ovs-to-cmts (ovs)
   "Repair and map overlay OVS list to list of `virtual-comment-unit'."
   (mapcar (lambda (ov)
@@ -429,10 +440,27 @@ There are two slots but for now we only care about slot comments."
         (concat root ".evc")
       virtual-comment-default-file)))
 
+(defun virtual-comment--rotate-backups (file)
+  "Rotate numbered backups of FILE.
+FILE.bk.1 becomes FILE.bk.2, FILE.bk.2 becomes FILE.bk.3, and so
+on up to `virtual-comment-backup-count' generations; anything
+older is left to be overwritten.  Does not touch FILE.bk itself;
+callers should rename/copy FILE to FILE.bk after calling this."
+  (when (> virtual-comment-backup-count 0)
+    (cl-loop for n from (1- virtual-comment-backup-count) downto 1
+             for src = (format "%s.bk.%d" file n)
+             for dst = (format "%s.bk.%d" file (1+ n))
+             when (file-exists-p src)
+             do (rename-file src dst t))
+    (let ((current-bk (format "%s.bk" file)))
+      (when (file-exists-p current-bk)
+        (rename-file current-bk (format "%s.bk.1" file) t)))))
+
 (defun virtual-comment--dump-data-to-file (data file)
-  "Dump DATA to .evc FILE."
+  "Dump DATA to .evc FILE, keeping rotated backups of prior versions."
   (when (file-exists-p file)
-   (copy-file file (format "%s.bk" file) t))
+    (virtual-comment--rotate-backups file)
+    (copy-file file (format "%s.bk" file) t))
   (with-temp-file file
     (let ((standard-output (current-buffer)))
       (prin1 data))))
@@ -490,30 +518,8 @@ or fail, return an empty hash talbe. When data doesn't pass the
     (when verbose (message "virtual-comment: %s doesn't exist" file))
     (make-hash-table :test 'equal)))
 
-;; https://stackoverflow.com/questions/16992726/how-to-prompt-the-user-for-a-block-of-text-in-elisp
-(defun virtual-comment--read-string-with-multiple-line (prompt pre-string exit-keyseq clear-keyseq)
-  "Read multiline from minibuffer.
-PROMPT with PRE-STRING binds EXIT-KEYSEQ to submit binds
-CLEAR-KEYSEQ to clear text."
-  (let ((keymap (copy-keymap minibuffer-local-map)))
-    (define-key keymap (kbd "RET") 'newline)
-    (define-key keymap exit-keyseq 'exit-minibuffer)
-    (define-key keymap clear-keyseq
-                (lambda () (interactive) (delete-region (minibuffer-prompt-end) (point-max))))
-    (read-from-minibuffer prompt pre-string keymap)))
-
-(defun virtual-comment--read-string (prompt &optional pre-string)
-  "Prompt for multiline string and return it.
-PROMPT is show in multiline, PRE-STRING is string added to the
-prompt"
-  (virtual-comment--read-string-with-multiple-line
-   (concat prompt " C-s to submit, C-g to cancel, C-c C-k to clear:\n")
-   pre-string
-   (kbd "C-s")
-   (kbd "C-c C-k")))
-
 (defun virtual-comment--overlayp (ov)
-  "Predicate for OV being commnent."
+  "Predicate for OV being comment."
   (overlay-get ov 'virtual-comment))
 
 (defun virtual-comment--get-overlay-at (point)
@@ -534,7 +540,7 @@ When SHOULD-SORT is non-nil sort by point."
 
 (defun virtual-comment--line-at-point ()
   "Reinvent `thing-at-point line'."
-  (buffer-substring (point-at-bol) (point-at-eol)))
+  (buffer-substring (line-beginning-position) (line-end-position)))
 
 (defun virtual-comment--search (s)
   "Search for S from the beginning of buffer.
@@ -559,13 +565,13 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
       (unless (string= org-target current-target)
         (when-let (found (virtual-comment--search org-target))
           (goto-char found))
-        (goto-char (point-at-bol))
+        (goto-char (line-beginning-position))
         (overlay-put ov
                      'before-string
                      (virtual-comment--make-comment-for-display
                       (overlay-get ov 'virtual-comment)
                       (current-indentation)))
-        (move-overlay ov (point-at-bol) (point-at-eol))
+        (move-overlay ov (line-beginning-position) (line-end-position))
         (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))))
 
     ;; (2) if align here then (1) was not invoked
@@ -575,7 +581,7 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
                    (virtual-comment--make-comment-for-display
                     (overlay-get ov 'virtual-comment)
                     (current-indentation)))
-      (move-overlay ov (point-at-bol) (point-at-eol))))
+      (move-overlay ov (line-beginning-position) (line-end-position))))
   (when make-comment-unit
     (virtual-comment-unit-create
      :point (overlay-start ov)
@@ -594,22 +600,6 @@ When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'."
   "Return comment string at POINT."
   (when-let (ov (virtual-comment--get-overlay-at point))
     (overlay-get ov 'virtual-comment)))
-
-;; (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
-;;   "Move overlay back to the front.
-;; OV is overlay, IS-AFTER-CHANGE, _ are extra
-;; params. If there is already a ov comment on the line, the moved
-;; ov will be discarded and its comment will be added to the host
-;; comment."
-;;   (when is-after-change
-;;     (let* ((point (point-at-bol))
-;;            (comment (overlay-get ov 'virtual-comment))
-;;            (comment-for-display (virtual-comment--make-comment-for-display
-;;                                  comment
-;;                                  (current-indentation))))
-;;       (move-overlay ov point (point-at-eol))
-;;       (overlay-put ov 'before-string comment-for-display)
-;;       (overlay-put ov 'virtual-comment comment))))
 
 (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
   "Update ov field virtual-comment-target.
@@ -678,9 +668,9 @@ Clear all overlays and act like buffer about to close."
 (defun virtual-comment-next ()
   "Go to next/below comment."
   (interactive)
-  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-eol)
-                                                    (point-max)
-                                                    #'next-overlay-change))
+  (if-let (point (virtual-comment--get-neighbor-cmt (line-end-position)
+                                                     (point-max)
+                                                     #'next-overlay-change))
       (goto-char point)
     (message "No next comment found.")))
 
@@ -688,9 +678,9 @@ Clear all overlays and act like buffer about to close."
 (defun virtual-comment-previous ()
   "Go to previous/above comment."
   (interactive)
-  (if-let (point (virtual-comment--get-neighbor-cmt (point-at-bol)
-                                                    (point-min)
-                                                    #'previous-overlay-change))
+  (if-let (point (virtual-comment--get-neighbor-cmt (line-beginning-position)
+                                                     (point-min)
+                                                     #'previous-overlay-change))
       (goto-char point)
     (message "No previous comment found.")))
 
@@ -727,13 +717,13 @@ Clear all overlays and act like buffer about to close."
       (let* ((indent (current-indentation))
              (org-comment (virtual-comment--get-comment-at point))
              (ov (if org-comment (virtual-comment--get-overlay-at point)
-                   (make-overlay point (point-at-eol) nil t nil))))
+                   (make-overlay point (line-end-position) nil t nil))))
         (virtual-comment--ov-ensure ov comment target indent)))))
 
 (defun virtual-comment--append (str)
-  "Append SRT to comment.
+  "Append STR to comment.
 Won't prepend new line if comment is nil"
-  (let* ((point (point-at-bol))
+  (let* ((point (line-beginning-position))
          (indent (current-indentation))
          (target (thing-at-point 'line t))
          (org-comment (virtual-comment--get-comment-at point))
@@ -742,7 +732,7 @@ Won't prepend new line if comment is nil"
                     str))
          ;; must get existing overlay when comment is non-nil
          (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point (point-at-eol) nil t nil))))
+               (make-overlay point (line-end-position) nil t nil))))
     (virtual-comment--ov-ensure ov comment target indent)
     (virtual-comment--update-data-async-maybe)))
 
@@ -772,30 +762,11 @@ Won't prepend new line if comment is nil"
 (defun virtual-comment-goto-location ()
   "Open location in other window."
   (interactive)
-  (when-let* ((cmt (virtual-comment--get-comment-at (point-at-bol)))
+  (when-let* ((cmt (virtual-comment--get-comment-at (line-beginning-position)))
               (candidates (virtual-comment--get-locations cmt)))
     (if (= (length candidates) 1)
         (virtual-comment--goto-location (car candidates))
       (virtual-comment--goto-location (completing-read "Select:" candidates)))))
-
-;;;###autoload
-(defun virtual-comment-make-old ()
-  "Add or edit comment at current line."
-  (interactive)
-  (let* ((point (point-at-bol))
-         (indent (current-indentation))
-         (target (thing-at-point 'line t))
-         (org-comment (virtual-comment--get-comment-at point))
-         (comment (virtual-comment--read-string
-                   "Insert comment:"
-                   org-comment))
-         ;; must get existing overlay when comment is non-nil
-         (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point (point-at-eol) nil t nil))))
-    (if (> (length comment) 0)
-        (virtual-comment--ov-ensure ov comment target indent)
-      (delete-overlay ov))
-    (virtual-comment--update-data-async-maybe)))
 
 (defvar-local virtual-comment-make--callback nil)
 
@@ -803,12 +774,12 @@ Won't prepend new line if comment is nil"
 (defun virtual-comment-make ()
   "Add or edit comment at current line."
   (interactive)
-  (let* ((point (point-at-bol))
+  (let* ((point (line-beginning-position))
          (indent (current-indentation))
          (target (thing-at-point 'line t))
          (org-comment (virtual-comment--get-comment-at point))
          (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point (point-at-eol) nil t nil)))
+               (make-overlay point (line-end-position) nil t nil)))
          (buffer (current-buffer)))
     (select-window (split-window-vertically -4))
     (switch-to-buffer (generate-new-buffer "*virtual-comment-make*"))
@@ -896,46 +867,54 @@ Won't prepend new line if comment is nil"
 
 (defun virtual-comment--delete-comment-at (point)
   "Delete the comment at point POINT.
-Find the overlay for this POINT and delete it. Update the store."
+Find the overlay for this POINT, delete it, and push it onto
+`virtual-comment-deleted-overlays' so it can be recovered with
+`virtual-comment-paste', even after further deletes."
   (when-let (ov (virtual-comment--get-overlay-at point))
-    (setq virtual-comment-deleted-overlay ov)
-    (delete-overlay ov)))
+    (delete-overlay ov)
+    (push ov virtual-comment-deleted-overlays)
+    (when (> (length virtual-comment-deleted-overlays)
+             virtual-comment-deleted-overlay-ring-size)
+      (setq virtual-comment-deleted-overlays
+            (butlast virtual-comment-deleted-overlays
+                     (- (length virtual-comment-deleted-overlays)
+                        virtual-comment-deleted-overlay-ring-size))))))
 
 ;;;###autoload
 (defun virtual-comment-delete ()
   "Delete comments of this current line.
 The comment then can be pasted with `virtual-comment-paste'."
   (interactive)
-  (let ((point (point-at-bol)))
+  (let ((point (line-beginning-position)))
     (virtual-comment--delete-comment-at point))
   (virtual-comment--update-data-async-maybe))
 
 (defun virtual-comment--paste-at (point indent target)
-  "Paste comment at POINT and with INDENT and update its TARGET."
-  (when virtual-comment-deleted-overlay
+  "Paste the most recently deleted comment at POINT with INDENT and TARGET.
+Pops it off `virtual-comment-deleted-overlays', so repeated calls
+walk back through however many comments were deleted, most
+recent first."
+  (when-let (ov (pop virtual-comment-deleted-overlays))
     (let ((comment-for-display (virtual-comment--make-comment-for-display
-                                (overlay-get
-                                 virtual-comment-deleted-overlay
-                                 'virtual-comment)
+                                (overlay-get ov 'virtual-comment)
                                 indent)))
-      (overlay-put virtual-comment-deleted-overlay
-                   'before-string
-                   comment-for-display)
-      (overlay-put virtual-comment-deleted-overlay
-                   'virtual-comment-target
-                   target)
-      (move-overlay virtual-comment-deleted-overlay
-                    point
-                    (point-at-eol)))))
+      (overlay-put ov 'before-string comment-for-display)
+      (overlay-put ov 'virtual-comment-target target)
+      (move-overlay ov point (line-end-position)))))
 
 ;;;###autoload
 (defun virtual-comment-paste ()
-  "Paste comment."
+  "Paste the most recently deleted comment onto the current line.
+Calling this repeatedly restores earlier deletes as well, most
+recent first; see `virtual-comment-deleted-overlays'."
   (interactive)
-  (virtual-comment--paste-at (point-at-bol)
-                             (current-indentation)
-                             (thing-at-point 'line t))
-  (virtual-comment--update-data-async-maybe))
+  (if virtual-comment-deleted-overlays
+      (progn
+        (virtual-comment--paste-at (line-beginning-position)
+                                   (current-indentation)
+                                   (thing-at-point 'line t))
+        (virtual-comment--update-data-async-maybe))
+    (message "virtual-comment: nothing to paste")))
 
 (defun virtual-comment--clear ()
   "Clear all overlays in current buffer."
@@ -944,7 +923,7 @@ The comment then can be pasted with `virtual-comment-paste'."
 
 ;;;###autoload
 (define-minor-mode virtual-comment-mode
-  "This mode shows virtual commnents."
+  "This mode shows virtual comments."
   :lighter " evc"
   :keymap (make-sparse-keymap)
   (if virtual-comment-mode
