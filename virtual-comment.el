@@ -1140,8 +1140,8 @@ Won't prepend new line if comment is nil"
   "Add or edit comment for the current line or active region.
 When the region is active the comment is associated with the
 whole region: the stored TARGET is the multi-line text of the
-region, so `virtual-comment-show' displays the region and not
-just its first line."
+region, and the overlay is always anchored to the first line of
+the region, no matter the direction the region was selected in."
   (interactive
    (if (use-region-p)
        (list (save-excursion (goto-char (region-beginning))
@@ -1149,36 +1149,34 @@ just its first line."
              (save-excursion (goto-char (region-end))
                              (line-end-position)))
      (list (line-beginning-position) (line-end-position))))
-  (let* ((point beg)
-         (indent (current-indentation))
-         (target (buffer-substring-no-properties beg end))
-         (org-comment (virtual-comment--get-comment-at point))
-         (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay (line-beginning-position)
-                             (line-end-position)
-                             nil t nil)))
-         (buffer (current-buffer)))
-    (select-window (split-window-vertically -4))
-    (switch-to-buffer (generate-new-buffer "*virtual-comment-make*"))
-    (text-mode)
-    (virtual-comment-make-mode 1)
-    (when org-comment
-      (insert org-comment))
-    ;; set up callback
-    (setq virtual-comment-make--callback
-          (lambda (comment)
-            (with-current-buffer buffer
-              (if (> (length comment) 0)
-                  (progn
-                    (virtual-comment--ov-ensure ov comment target indent)
-                    (virtual-comment--set-context-props ov))
-                (unless org-comment
-                  (delete-overlay ov)))
-              (virtual-comment--update-data-async-maybe))))
-    (message
-     (substitute-command-keys
-      "\\[virtual-comment-make-done] to finish, \\[virtual-comment-make-abort] to abort"))))
-
+  (save-excursion
+    (goto-char beg)
+    (let* ((anchor (line-beginning-position))
+           (indent (current-indentation))
+           (target (buffer-substring-no-properties anchor end))
+           (org-comment (virtual-comment--get-comment-at anchor))
+           (ov (if org-comment (virtual-comment--get-overlay-at anchor)
+                 (make-overlay anchor (line-end-position) nil t nil)))
+           (buffer (current-buffer)))
+      (select-window (split-window-vertically -4))
+      (switch-to-buffer (generate-new-buffer "*virtual-comment-make*"))
+      (text-mode)
+      (virtual-comment-make-mode 1)
+      (when org-comment
+        (insert org-comment))
+      (setq virtual-comment-make--callback
+            (lambda (comment)
+              (with-current-buffer buffer
+                (if (> (length comment) 0)
+                    (progn
+                      (virtual-comment--ov-ensure ov comment target indent)
+                      (virtual-comment--set-context-props ov))
+                  (unless org-comment
+                    (delete-overlay ov)))
+                (virtual-comment--update-data-async-maybe))))
+      (message
+       (substitute-command-keys
+        "\\[virtual-comment-make-done] to finish, \\[virtual-comment-make-abort] to abort")))))
 (defvar virtual-comment-make-mode-map
   (let ((keymap (make-sparse-keymap)))
     (define-key keymap (kbd "C-c C-k") #'virtual-comment-make-abort)

@@ -574,3 +574,253 @@ merge cleanly. two comments added to the same file, or to two files that
 happen to sort alphabetically adjacent, can still conflict - same
 trade-off bookmark.el's own format has. real improvement over "always
 conflicts", not a promise of "never conflicts".
+
+
+* Multi-line Region Support
+
+** Overview
+
+  Extend =virtual-comment= so a comment can be attached to a
+  /region/ of lines rather than a single line. The comment's
+  stored =target= becomes the whole region's text (newline-joined),
+  the overlay stays anchored to the *first line* of the region, and
+  =virtual-comment-show= renders the full commented region.
+
+  Design goal: no new struct slot, no persistence format change,
+  no changes to existing on-disk =.evc= files. A single-line
+  comment is simply the degenerate case where =target= contains no
+  newline.
+
+** Design decisions
+
+*** Target, not end-point
+
+   An earlier alternative was to add an =end-point= slot to
+   =virtual-comment-unit= to record where the region ends. That was
+   rejected because:
+
+   - It would require a persistence alist change and a new
+     comparison field in =virtual-comment-equal=.
+   - It would duplicate information already present in =target=
+     (the number of lines a target spans is =1 + count(\\n)=).
+   - It would complicate =virtual-comment-show=, which would have
+     to look up the buffer to reconstruct the region text.
+
+   Storing the region text directly in =target= keeps the
+   invariant simple:
+
+   #+begin_quote
+   =target= is the exact buffer text of the commented region.
+   The overlay is always anchored at the beginning of the first
+   line of that region.
+   #+end_quote
+
+*** Overlay is still single-line
+
+   The overlay's start/end remain a single line. Only the *display
+   payload* (=before-string=) and the *stored fingerprint*
+   (=target=) grow. This means:
+
+   - =virtual-comment--get-overlay-at=, =virtual-comment--get-buffer-overlays=,
+     =virtual-comment-next=, =virtual-comment-previous=,
+     =virtual-comment-delete=, and =virtual-comment-paste= keep
+     working unchanged.
+   - Overlay movement and repair only need to reason about one
+     anchor, not a range.
+
+** Structural changes
+
+*** New helpers
+
+**** =virtual-comment--target-line-count=
+
+    #+begin_src emacs-lisp
+    (defun virtual-comment--target-line-count (target)
+      "Return the number of lines TARGET spans.
+    A single-line target (no newline) returns 1."
+      (1+ (cl-count ?\n (or target ""))))
+    #+end_src
+
+    Counts the lines a stored =target= occupies. Used by
+    =--set-context-props=, =--repair-overlay-maybe=, and
+    =--insert-hook-handler=.
+
+**** =virtual-comment--current-region-text=
+
+    #+begin_src emacs-lisp
+    (defun virtual-comment--current-region-text (start nlines)
+      "Return the buffer text of NLINES lines starting at the line of START.
+    The returned string has no properties and no trailing newline, so
+    it can be compared with a stored multi-line `virtual-comment-target'."
+      (save-excursion
+        (goto-char start)
+        (buffer-substring-no-properties
+         (line-beginning-position)
+         (progn (forward-line (1- nlines)) (line-end-position)))))
+    #+end_src
+
+    Reads =nlines= buffer lines from the line containing =start=.
+    Returns a property-less string with no trailing newline, so it
+    can be compared with a stored =target= via =string=.
+
+*** Modified functions
+
+**** =virtual-comment--set-context-props=
+
+    =below-target= now uses =nlines= as the =forward-line= offset,
+    so it points past the /end/ of the region rather than past its
+    first line:
+
+    #+begin_src emacs-lisp
+    (defun virtual-comment--set-context-props (ov)
+      (save-excursion
+        (goto-char (overlay-start ov))
+        (overlay-put ov 'virtual-comment-above-target
+                     (virtual-comment--line-relative -1))
+        (let ((nlines (virtual-comment--target-line-count
+                       (overlay-get ov 'virtual-comment-target))))
+          (overlay-put ov 'virtual-comment-below-target
+                       (virtual-comment--line-relative nlines)))))
+    #+end_src
+
+    For a single-line target =nlines = 1=, so behavior is
+    identical to before.
+
+**** =virtual-comment--repair-overlay-maybe=
+
+    The unchanged-check now compares the stored =target= against
+    =--current-region-text= instead of =thing-at-point 'line=.
+    After a successful relocation, =target= is recomputed over the
+    same =nlines=.
+
+    Key change (schematic):
+
+    #+begin_src emacs-lisp
+    (let* ((org-target (overlay-get ov 'virtual-comment-target))
+           (nlines (virtual-comment--target-line-count org-target))
+           (current-target (virtual-comment--current-region-text
+                            (overlay-start ov) nlines)))
+      (if (string= org-target current-target)
+          (overlay-put ov 'virtual-comment-unanchored nil)
+        ;; ... resolve and move as before, then:
+        (overlay-put ov 'virtual-comment-target
+                     (virtual-comment--current-region-text
+                      (overlay-start ov) nlines))))
+    #+end_src
+
+**** =virtual-comment--insert-hook-handler=
+
+    Previously clobbered =target= back to one line on any buffer
+    change. Now recomputes =target= over the same number of lines:
+
+    #+begin_src emacs-lisp
+    (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
+      (when is-after-change
+        (overlay-put ov
+                     'virtual-comment-target
+                     (let ((nlines (virtual-comment--target-line-count
+                                    (overlay-get ov 'virtual-comment-target))))
+                       (virtual-comment--current-region-text
+                        (overlay-start ov) nlines)))))
+    #+end_src
+
+**** =virtual-comment-make=
+
+    Two changes:
+
+    1. Interactive form now returns =(beg end)= from the active
+       region (or the current line when there is none).
+    2. The entire body runs inside =(save-excursion (goto-char beg)=,
+       so =indent=, =line-beginning-position=, and =line-end-position=
+       are all computed at the region's first line — *not* at point.
+
+    The second change is essential for direction-independence:
+    with an active region, point may be at either end of the
+    region depending on whether the user selected top-down or
+    bottom-up. Anchoring at point would place the comment at the
+    bottom line on a top-down selection. Anchoring at =beg=
+    guarantees it always lands on the first line of the region.
+
+    #+begin_src emacs-lisp
+    (defun virtual-comment-make (beg end)
+      (interactive
+       (if (use-region-p)
+           (list (save-excursion (goto-char (region-beginning))
+                                 (line-beginning-position))
+                 (save-excursion (goto-char (region-end))
+                                 (line-end-position)))
+         (list (line-beginning-position) (line-end-position))))
+      (save-excursion
+        (goto-char beg)
+        (let* ((anchor (line-beginning-position))
+               (indent (current-indentation))
+               (target (buffer-substring-no-properties anchor end))
+               (org-comment (virtual-comment--get-comment-at anchor))
+               (ov (if org-comment (virtual-comment--get-overlay-at anchor)
+                     (make-overlay anchor (line-end-position) nil t nil)))
+               (buffer (current-buffer)))
+          ;; ... edit-buffer setup and callback as before
+          )))
+    #+end_src
+
+** Invariants
+
+  1. =target= is the buffer text of the commented region, from the
+     beginning of the first line to the end of the last line, with
+     no trailing newline.
+  2. The overlay's start is always =line-beginning-position= of the
+     first line of the region, in both selection directions.
+  3. =nlines = 1 + count(\\n in target)= is the region's line count.
+  4. =above-target= is the line immediately before the region;
+     =below-target= is the line immediately after the region (i.e.
+     =nlines= lines below the anchor).
+
+** Backward compatibility
+
+  - No struct slots added or removed. =virtual-comment-unit= is
+    unchanged.
+  - The on-disk alist format is unchanged; =target= was already a
+    string field. A single-line comment written by an older version
+    reads back as a =target= with no newline and behaves as before.
+  - =virtual-comment-equal= is unchanged; =target= was already
+    compared.
+  - =virtual-comment--unit-to-alist= and =--alist-to-unit= are
+    unchanged.
+
+** Behavior matrix
+
+  | Action                               | Before               | After                                |
+  |--------------------------------------+----------------------+--------------------------------------|
+  | =virtual-comment-make= on a line     | comment on that line | comment on that line                 |
+  | =virtual-comment-make= on a region   | comment on first line only | comment on the whole region    |
+  | Region selected bottom-up            | n/a                  | comment on first line (direction-independent) |
+  | =virtual-comment-show=               | one line under label | all region lines under label         |
+  | Edit inside the region               | target collapses to one line | target recomputed over the same line count |
+  | Realign after external file change   | single-line match    | region-sized match; below-context from line after region |
+  | Persistence                          | unchanged            | unchanged                            |
+
+** Known trade-offs
+
+  1. *Line-deletion drift.* If the user deletes a line inside the
+     region, =--insert-hook-handler= recomputes =target= over the
+     original =nlines=, pulling in one line past the old end. This
+     matches the drift behavior already accepted for single-line
+     comments and is corrected on the next =virtual-comment-realign=.
+  2. *Fuzzy match scope.* =--search-all= still splits on whitespace
+     including =\\n=, so a multi-line target is matched as a token
+     run with flexible inter-token whitespace. This is the same
+     matching policy as before, now applied to a longer string.
+  3. *Show buffer rendering.* Each comment unit in
+     =virtual-comment-show= now ends with an explicit blank line
+     separator, so a multi-line target can never collide visually
+     with the next comment's label. This is a small behavior change
+     to the show buffer layout.
+
+** Out of scope
+
+  - No visual marker (gutter bar, bracket, etc.) indicating which
+    lines a multi-line comment covers. The comment still renders
+    only above the anchor line.
+  - No per-line rendering of the comment across the region.
+  - No change to =virtual-comment-delete=, =virtual-comment-paste=,
+    =virtual-comment-next=, or =virtual-comment-previous=.
