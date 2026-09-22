@@ -1416,14 +1416,15 @@ run (virtual-comment-mode) again this function won't do anything."
   "Print out comments.
 from UNIT as `virtual-comment-unit' for FILE-NAME of project
 ROOT."
-  ;; (message "%s" comments)
   (let* ((full-path (concat root file-name))
          (point (virtual-comment-unit-point unit))
-         (comment (virtual-comment-unit-comment unit))
-         (target (virtual-comment-unit-target unit))
+         (comment (or (virtual-comment-unit-comment unit) ""))
+         (target (or (virtual-comment-unit-target unit) ""))
+         (target (replace-regexp-in-string "\r\n?" "\n" target))
+         (target (string-trim-right target))
          (unanchored (virtual-comment-unit-unanchored unit))
          (label (if unanchored (concat "[UNANCHORED] " comment) comment)))
-    (insert (format "%s\n%s"
+    (insert (format "%s\n"
                     (propertize label
                                 'font-lock-face (if unanchored
                                                     'virtual-comment-unanchored-face
@@ -1431,8 +1432,12 @@ ROOT."
                                 'virtual-comment-point point
                                 'virtual-comment-full-path full-path
                                 'virtual-comment-relative-path file-name
-                                'keymap virtual-comment-show-map)
-                    target))))
+                                'keymap virtual-comment-show-map)))
+    (when (not (string-empty-p target))
+      (insert target)
+      (unless (string-suffix-p "\n" target)
+        (insert "\n")))
+    (insert "\n")))
 
 (defun virtual-comment--print (file-comments file-name root)
   "Print out comments from FILE-COMMENTS for FILE-NAME of project ROOT.
