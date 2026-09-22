@@ -511,3 +511,66 @@ future struct field addition, not just this one.
   is about the .evc file itself changing under us (a teammate's git
   pull racing our own save), a different problem from a single comment's
   line moving inside a file we already have open
+
+* DONE store .evc as a plain, sorted, pretty-printed alist (like bookmark.el)
+CLOSED: [2026-09-20 Sun]
+prompted by looking at how Emacs's own bookmark.el persists itself: one
+pretty-printed alist per bookmark, human readable and mergeable. .evc was
+a single prin1'd hash-table of `virtual-comment-buffer-data' structs, each
+holding a list of `virtual-comment-unit' structs, all as one unbroken
+line with no internal structure a text-based tool (git diff/merge, human
+eyes) could use. two consequences:
+- unreadable/unhand-editable, one giant blob
+- any two independent changes to the same .evc conflict on every merge,
+  no exceptions, since the whole file is one line as far as line-based
+  diff is concerned. confirmed this empirically: same two-branch add-a-
+  comment-to-a-different-file scenario, old format conflicts 100% of the
+  time, new format merges cleanly whenever the changed files don't sort
+  alphabetically adjacent (adjacent insertions can still conflict, but
+  cleanly, as ordinary resolvable text, not mangled printer syntax)
+
+** design
+only the disk boundary changed, nothing else in the file. all the
+existing struct-based code (every accessor, all the repair/resolve
+logic) is untouched, still works purely with
+virtual-comment-unit/virtual-comment-buffer-data structs in memory. the
+new pieces sit only between that and disk:
+- virtual-comment--unit-to-alist / --alist-to-unit: one comment's struct
+  <-> a small alist (point, comment, target, above-target, below-target,
+  unanchored), by key not by position
+- virtual-comment--buffer-data-to-entry / --entry-to-buffer-data: one
+  file's buffer-data <-> (filename (comments alist...))
+- virtual-comment--serialize-store / --deserialize-store: the whole
+  files hash table <-> a list of entries, sorted by filename, comments
+  within a file sorted by point. the sorting is load-bearing: without a
+  deterministic order an unrelated change could reshuffle the whole file
+  and manufacture conflicts that have nothing to do with what actually
+  changed
+- virtual-comment--dump-data-to-file now calls `pp' on that list instead
+  of prin1 on the raw hash table
+- virtual-comment--load-data-from-file branches on the shape of what it
+  read: a list is the current format
+  (virtual-comment--persisted-list-p), a hash-table is the old one
+  (virtual-comment--persisted-data-p, same
+  virtual-comment--upgrade-persisted-data path as before). no version
+  marker needed, the two are just different lisp types
+
+migration is transparent: an old file loads through the existing
+upgrade path exactly as before, and gets rewritten in the new format
+the next time that project's data is saved, which already happens on
+its own. virtual-comment-unit--upgrade doesn't go away, it's just
+legacy-only now, for files nobody has re-saved since this change.
+
+the alist format also quietly finishes the job that upgrade function
+was built for: a struct field added *after this point* needs no upgrade
+step at all, ever, for data saved in the new format. missing key ->
+alist-get returns nil -> same as a freshly created unit. confirmed by
+hand-writing a .evc with a field this code has never heard of and
+loading it without error.
+
+** known limitation
+sorting only makes concurrent edits to *different* parts of the list
+merge cleanly. two comments added to the same file, or to two files that
+happen to sort alphabetically adjacent, can still conflict - same
+trade-off bookmark.el's own format has. real improvement over "always
+conflicts", not a promise of "never conflicts".

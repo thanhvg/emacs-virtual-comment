@@ -93,6 +93,7 @@
 (require 'cl-generic)
 (require 'cl-lib)
 (require 'outline)
+(require 'pp)
 (require 'project)
 (require 'seq)
 (require 'simple)
@@ -334,8 +335,15 @@ upgraded once, here, before it is ever used."
 (defun virtual-comment--upgrade-persisted-data (data)
   "Upgrade every `virtual-comment-unit' found in DATA in place.
 DATA is a hash table of file name to `virtual-comment-buffer-data',
-as returned by `virtual-comment--load-data-from-file'.  See
-`virtual-comment-unit--upgrade'."
+as returned by reading the legacy on-disk format (a single
+positional-record hash-table blob).  See
+`virtual-comment-unit--upgrade'.  Only the legacy reader in
+`virtual-comment--load-data-from-file' calls this: the current
+on-disk format (see `virtual-comment--serialize-store') stores
+comments as small alists, which don't need a positional upgrade
+at all -- a field missing from an alist is simply nil, exactly
+like a freshly created unit, whether it's missing because the
+file predates that field or the running code no longer uses it."
   (maphash
    (lambda (_filename buffer-data)
      (when buffer-data
@@ -344,6 +352,110 @@ as returned by `virtual-comment--load-data-from-file'.  See
                      (virtual-comment-buffer-data-comments buffer-data)))))
    data)
   data)
+
+(defun virtual-comment--unit-to-alist (unit)
+  "Convert `virtual-comment-unit' UNIT to a small, self-describing alist.
+Used for on-disk storage; see `virtual-comment--serialize-store'
+for why this, rather than the struct itself, is what gets
+written to a `.evc' file."
+  (list (cons 'point (virtual-comment-unit-point unit))
+        (cons 'comment (virtual-comment-unit-comment unit))
+        (cons 'target (virtual-comment-unit-target unit))
+        (cons 'above-target (virtual-comment-unit-above-target unit))
+        (cons 'below-target (virtual-comment-unit-below-target unit))
+        (cons 'unanchored (virtual-comment-unit-unanchored unit))))
+
+(defun virtual-comment--alist-to-unit (alist)
+  "Convert an on-disk comment ALIST back into a `virtual-comment-unit'.
+Any key missing from ALIST -- because it was written by an older
+version of this package before that field existed, or by hand --
+simply comes back as nil, exactly like a freshly created unit.
+Unlike the struct's own positional on-disk format (see
+`virtual-comment-unit--upgrade'), this needs no separate upgrade
+step, now or for any field added in the future."
+  (virtual-comment-unit-create
+   :point (alist-get 'point alist)
+   :comment (alist-get 'comment alist)
+   :target (alist-get 'target alist)
+   :above-target (alist-get 'above-target alist)
+   :below-target (alist-get 'below-target alist)
+   :unanchored (alist-get 'unanchored alist)))
+
+(defun virtual-comment--buffer-data-to-entry (file-name buffer-data)
+  "Convert FILE-NAME and its BUFFER-DATA into one on-disk entry.
+Shape: (FILE-NAME (comments COMMENT-ALIST...)).  Comments are
+sorted by point so that a file whose comments didn't change
+serializes to the exact same text next time, keeping diffs
+minimal; see `virtual-comment--serialize-store'."
+  (list file-name
+        (cons 'comments
+              (sort (mapcar #'virtual-comment--unit-to-alist
+                            (virtual-comment-buffer-data-comments buffer-data))
+                    (lambda (a b) (< (or (alist-get 'point a) 0)
+                                     (or (alist-get 'point b) 0)))))))
+
+(defun virtual-comment--entry-to-buffer-data (entry)
+  "Convert one on-disk ENTRY back to (FILE-NAME . `virtual-comment-buffer-data')."
+  (let* ((file-name (car entry))
+         (comments (alist-get 'comments (cdr entry))))
+    (cons file-name
+          (virtual-comment-buffer-data-create
+           :filename file-name
+           :comments (mapcar #'virtual-comment--alist-to-unit comments)))))
+
+(defun virtual-comment--serialize-store (files-hash)
+  "Convert FILES-HASH into the on-disk list format.
+FILES-HASH is a hash table of file name to
+`virtual-comment-buffer-data', i.e. the `files' slot of a
+`virtual-comment-project'.  The result is a plain list of
+entries (see `virtual-comment--buffer-data-to-entry'), sorted by
+file name, meant to be written with `pp' rather than `prin1'.
+
+This -- rather than printing FILES-HASH itself, a single opaque
+hash-table/record blob -- is what makes a `.evc' file readable
+and hand-editable, and lets two independent sets of new comments
+in the same project usually merge with an ordinary three-way text
+merge instead of colliding on one indivisible object.  Sorting
+matters for that: without a deterministic order, an unrelated
+change could reshuffle the whole file and manufacture spurious
+conflicts.  It doesn't make every concurrent edit conflict-free --
+two comments added to the very same file at adjacent sorted
+positions can still collide, the same trade-off `bookmark.el's
+own alist-based format has -- but it turns the common case
+\(different files, or different parts of the same file's list\)
+from a guaranteed conflict into a clean merge."
+  (let (entries)
+    (maphash (lambda (file-name buffer-data)
+               (push (virtual-comment--buffer-data-to-entry file-name buffer-data)
+                     entries))
+             files-hash)
+    (sort entries (lambda (a b) (string< (car a) (car b))))))
+
+(defun virtual-comment--deserialize-store (entries)
+  "Convert on-disk ENTRIES back into a file-name -> `virtual-comment-buffer-data'
+hash table.  Inverse of `virtual-comment--serialize-store'."
+  (let ((files-hash (make-hash-table :test 'equal)))
+    (dolist (entry entries)
+      (let ((pair (virtual-comment--entry-to-buffer-data entry)))
+        (puthash (car pair) (cdr pair) files-hash)))
+    files-hash))
+
+(defun virtual-comment--persisted-entry-p (entry)
+  "Loosely validate ENTRY as one on-disk entry: (FILE-NAME . ALIST)."
+  (and (consp entry)
+       (stringp (car entry))
+       (listp (cdr entry))))
+
+(defun virtual-comment--persisted-list-p (data)
+  "Validate DATA as the current on-disk list format: a list of entries.
+See `virtual-comment--persisted-entry-p'.  Distinguishing this
+from the legacy hash-table format
+\(`virtual-comment--persisted-data-p'\) is how
+`virtual-comment--load-data-from-file' tells old and current
+`.evc' files apart, without needing an explicit version marker:
+the two are different Lisp types to begin with."
+  (and (listp data)
+       (seq-every-p #'virtual-comment--persisted-entry-p data)))
 
 (cl-defmethod virtual-comment-equal
   ((ht1 hash-table) (ht2 hash-table))
@@ -536,13 +648,19 @@ callers should rename/copy FILE to FILE.bk after calling this."
         (rename-file current-bk (format "%s.bk.1" file) t)))))
 
 (defun virtual-comment--dump-data-to-file (data file)
-  "Dump DATA to .evc FILE, keeping rotated backups of prior versions."
+  "Dump DATA to .evc FILE, keeping rotated backups of prior versions.
+DATA is a file-name -> `virtual-comment-buffer-data' hash table.
+Written pretty-printed (see `virtual-comment--serialize-store')
+rather than as a single opaque blob, so the file stays readable
+and diffable by hand."
   (when (file-exists-p file)
     (virtual-comment--rotate-backups file)
     (copy-file file (format "%s.bk" file) t))
   (with-temp-file file
-    (let ((standard-output (current-buffer)))
-      (prin1 data))))
+    (let ((standard-output (current-buffer))
+          (print-length nil)
+          (print-level nil))
+      (pp (virtual-comment--serialize-store data)))))
 
 (defun virtual-comment--persist ()
   "Persist project data to file."
@@ -576,15 +694,28 @@ callers should rename/copy FILE to FILE.bk after calling this."
 Return the slot file of `virtual-comment-project'. If not found
 or fail, return an empty hash talbe. When data doesn't pass the
 `virtual-comment--persisted-data-p' rename .evc file to
-.evc.error."
+.evc.error.
+
+Understands two on-disk shapes: the current, human-readable list
+format (`virtual-comment--persisted-list-p', converted with
+`virtual-comment--deserialize-store'), and the older
+hash-table-of-records format this package used to write
+(`virtual-comment--persisted-data-p', upgraded on the fly with
+`virtual-comment--upgrade-persisted-data').  A file in the older
+format is rewritten in the current one the next time this
+project's data is saved -- see `virtual-comment--dump-data-to-file'
+-- so the migration is transparent and happens once per project."
   (if (file-exists-p file)
       (with-temp-buffer
         (condition-case err
             (progn (insert-file-contents file)
                    (let ((data (read (current-buffer))))
-                     (if (virtual-comment--persisted-data-p data)
-                         (virtual-comment--upgrade-persisted-data data)
-                       (user-error "evc unable to parse persited data"))))
+                     (cond
+                      ((virtual-comment--persisted-list-p data)
+                       (virtual-comment--deserialize-store data))
+                      ((virtual-comment--persisted-data-p data)
+                       (virtual-comment--upgrade-persisted-data data))
+                      (t (user-error "evc unable to parse persited data")))))
           (user-error
            (let ((file-error (format "%s.error" file)))
              (rename-file file file-error t)
