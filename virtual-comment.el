@@ -183,7 +183,10 @@ silently discarded the first.")
            :documentation "comment string")
   (target nil
           :type string
-          :documentation "line content on which the comment is.")
+          :documentation "line content on which the comment is.
+For a multi-line region this is the whole region's text joined
+by newlines; the overlay itself is still anchored to the first
+line of the region.")
   (above-target nil
                 :type string
                 :documentation
@@ -196,7 +199,8 @@ is confidently confirmed, never on a mere guess.")
                 :type string
                 :documentation
                 "line content directly below TARGET, \"\" if TARGET was the
-last line of the buffer.  See ABOVE-TARGET.")
+last line of the buffer.  See ABOVE-TARGET.  For a multi-line
+region this is the line after the *last* line of the region.")
   (unanchored nil
               :type boolean
               :documentation
@@ -760,17 +764,36 @@ OFFSET is passed to `forward-line'."
         (virtual-comment--line-at-point)
       "")))
 
+(defun virtual-comment--target-line-count (target)
+  "Return the number of lines TARGET spans.
+A single-line target (no newline) returns 1."
+  (1+ (cl-count ?\n (or target ""))))
+
+(defun virtual-comment--current-region-text (start nlines)
+  "Return the buffer text of NLINES lines starting at the line of START.
+The returned string has no properties and no trailing newline, so
+it can be compared with a stored multi-line `virtual-comment-target'."
+  (save-excursion
+    (goto-char start)
+    (buffer-substring-no-properties
+     (line-beginning-position)
+     (progn (forward-line (1- nlines)) (line-end-position)))))
+
 (defun virtual-comment--set-context-props (ov)
-  "Record the lines above/below OV's start line as future disambiguation context.
+  "Record the lines above/below OV's region as future disambiguation context.
 Called whenever OV's location has just been freshly confirmed
 correct (created, edited, pasted, or successfully repaired) --
 never when only guessing -- so `virtual-comment-unit-above-target'
 /`-below-target' always reflect a known-good fingerprint rather
-than possibly-already-wrong text."
+than possibly-already-wrong text.  For a multi-line region the
+below line is the line after the *last* line of the region."
   (save-excursion
     (goto-char (overlay-start ov))
     (overlay-put ov 'virtual-comment-above-target (virtual-comment--line-relative -1))
-    (overlay-put ov 'virtual-comment-below-target (virtual-comment--line-relative 1))))
+    (let ((nlines (virtual-comment--target-line-count
+                   (overlay-get ov 'virtual-comment-target))))
+      (overlay-put ov 'virtual-comment-below-target
+                   (virtual-comment--line-relative nlines)))))
 
 (defun virtual-comment--search-all (s)
   "Return every fuzzy match point of S in the buffer, ignoring whitespace.
@@ -848,21 +871,23 @@ is added later."
   "Re-align comment overlay OV if necessary.
 When MAKE-COMMENT-UNIT is non nil return `virtual-comment-unit'.
 
-If OV's line still reads the same as when it was last confirmed,
+If OV's region still reads the same as when it was last confirmed,
 only its bounds/display are refreshed.  Otherwise
 `virtual-comment--resolve-target' is used to try to find where
-the line went; a confident match (`unique' or `context') moves OV
-there and re-confirms its context fingerprint for next time.  A
-mere guess (`nearest') moves OV too, for display purposes, but
+the region went; a confident match (`unique' or `context') moves
+OV there and re-confirms its context fingerprint for next time.
+A mere guess (`nearest') moves OV too, for display purposes, but
 leaves its stored fingerprint untouched (so a later, better
 positioned repair can still recover) and flags it unanchored.  If
-the line can't be found at all (`not-found'), OV is left exactly
-where it was rather than silently drifting to whatever now
-happens to be there, and is likewise flagged."
+the region can't be found at all (`not-found'), OV is left
+exactly where it was rather than silently drifting to whatever
+now happens to be there, and is likewise flagged."
   (save-excursion
     (goto-char (overlay-start ov))
-    (let ((org-target (overlay-get ov 'virtual-comment-target))
-          (current-target (thing-at-point 'line t)))
+    (let* ((org-target (overlay-get ov 'virtual-comment-target))
+           (nlines (virtual-comment--target-line-count org-target))
+           (current-target (virtual-comment--current-region-text
+                            (overlay-start ov) nlines)))
       (if (string= org-target current-target)
           (overlay-put ov 'virtual-comment-unanchored nil)
         (let* ((above (or (overlay-get ov 'virtual-comment-above-target) ""))
@@ -875,7 +900,9 @@ happens to be there, and is likewise flagged."
            ((memq status '(unique context))
             (goto-char found)
             (move-overlay ov (line-beginning-position) (line-end-position))
-            (overlay-put ov 'virtual-comment-target (thing-at-point 'line t))
+            (overlay-put ov 'virtual-comment-target
+                         (virtual-comment--current-region-text
+                          (overlay-start ov) nlines))
             (overlay-put ov 'virtual-comment-unanchored nil)
             (virtual-comment--set-context-props ov))
            ((eq status 'nearest)
@@ -917,13 +944,16 @@ happens to be there, and is likewise flagged."
 
 (defun virtual-comment--insert-hook-handler (ov is-after-change &rest _)
   "Update ov field virtual-comment-target.
-OV is overlay, IS-AFTER-CHANGE, _ are extra params."
+OV is overlay, IS-AFTER-CHANGE, _ are extra params.  For a
+multi-line region the new target is recomputed over the same
+number of lines the region spanned before the change."
   (when is-after-change
     (overlay-put ov
                  'virtual-comment-target
-                 (save-excursion
-                   (goto-char (overlay-start ov))
-                   (thing-at-point 'line t)))))
+                 (let ((nlines (virtual-comment--target-line-count
+                                (overlay-get ov 'virtual-comment-target))))
+                   (virtual-comment--current-region-text
+                    (overlay-start ov) nlines)))))
 
 (defun virtual-comment--get-neighbor-cmt (point end-point getter-func)
   "Return point of the neighbor comment of POINT, nil if not found.
@@ -1106,15 +1136,27 @@ Won't prepend new line if comment is nil"
 (defvar-local virtual-comment-make--callback nil)
 
 ;;;###autoload
-(defun virtual-comment-make ()
-  "Add or edit comment at current line."
-  (interactive)
-  (let* ((point (line-beginning-position))
+(defun virtual-comment-make (beg end)
+  "Add or edit comment for the current line or active region.
+When the region is active the comment is associated with the
+whole region: the stored TARGET is the multi-line text of the
+region, so `virtual-comment-show' displays the region and not
+just its first line."
+  (interactive
+   (if (use-region-p)
+       (list (save-excursion (goto-char (region-beginning))
+                             (line-beginning-position))
+             (save-excursion (goto-char (region-end))
+                             (line-end-position)))
+     (list (line-beginning-position) (line-end-position))))
+  (let* ((point beg)
          (indent (current-indentation))
-         (target (thing-at-point 'line t))
+         (target (buffer-substring-no-properties beg end))
          (org-comment (virtual-comment--get-comment-at point))
          (ov (if org-comment (virtual-comment--get-overlay-at point)
-               (make-overlay point (line-end-position) nil t nil)))
+               (make-overlay (line-beginning-position)
+                             (line-end-position)
+                             nil t nil)))
          (buffer (current-buffer)))
     (select-window (split-window-vertically -4))
     (switch-to-buffer (generate-new-buffer "*virtual-comment-make*"))
