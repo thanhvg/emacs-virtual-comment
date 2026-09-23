@@ -1533,23 +1533,24 @@ Pressing enter on comment will go to comment."
        (virtual-comment-project-files virtual-comment-show--project-data)))
     (goto-char (point-min))))
 
-
 (defun virtual-comment-show-set-filter (filter)
-  "Set show-mode tag FILTER and refresh the buffer."
+  "Set show-mode tag FILTER and refresh the buffer.
+Tags picked from the prompt are combined with `+' (AND), matching
+`virtual-comment-show--matches-filter-p'."
   (interactive
    (list
     (string-join
      (completing-read-multiple
-      "Filter: "
+      "Filter (tags, AND'd together): "
       (completion-table-with-metadata
-       (mapcan (lambda (tag)
-                 (list tag (concat "-" tag)))
-               (virtual-comment-show--tag-vocabulary))
+       (nconc (list "-*")
+              (mapcan (lambda (tag) (list tag (concat "-" tag)))
+                      (virtual-comment-show--tag-vocabulary)))
        '((category . virtual-comment-tag)))
       nil nil
       virtual-comment-show-filter
       'virtual-comment-show-filter-history)
-     ",")))
+     "+")))
   (setq virtual-comment-show-filter
         (unless (string-empty-p (string-trim filter))
           filter))
