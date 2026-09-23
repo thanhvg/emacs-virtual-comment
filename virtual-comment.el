@@ -1108,9 +1108,27 @@ Won't prepend new line if comment is nil"
   (when virtual-comment--current-location
     (virtual-comment--append virtual-comment--current-location)))
 
+(defconst virtual-comment--location-line-regexp "\\`.*? | .*?:[0-9]+\\'"
+  "Regexp that matches a virtual-comment location line.")
+
 (defun virtual-comment--get-locations (str)
   "Get locations from string STR."
-  (seq-filter (lambda (x) (string-match-p ".*? | .*?:[0-9]+$" x)) (split-string str "\n")))
+  (seq-filter (lambda (x)
+                (string-match-p virtual-comment--location-line-regexp x))
+              (split-string str "\n")))
+
+(defun virtual-comment--get-tags (comment)
+  "Return tags found in COMMENT.
+Location lines are opaque and do not contribute tags.  Tags are
+returned in lower case because tag matching is case-insensitive."
+  (let (tags)
+    (dolist (line (split-string (or comment "") "\n"))
+      (unless (string-match-p virtual-comment--location-line-regexp line)
+        (let ((start 0))
+          (while (string-match "#\\([[:alnum:]_-]+\\)" line start)
+            (push (downcase (match-string 1 line)) tags)
+            (setq start (match-end 0))))))
+    (delete-dups (nreverse tags))))
 
 (defun virtual-comment--goto-location (str)
   "STR is 'symbol | filepath:number'."
@@ -1454,10 +1472,99 @@ Pressing enter on comment will go to comment."
             (virtual-comment--print-comments it file-name root))
           file-comments)))
 
+(defvar-local virtual-comment-show-filter nil
+  "Tag filter used by `virtual-comment-show-mode'.")
+
+(put 'virtual-comment-show-filter 'permanent-local t)
+
+(defvar-local virtual-comment-show--project-data nil)
+(defvar-local virtual-comment-show--root nil)
+
+(defun virtual-comment-show--matches-filter-p (unit)
+  "Return non-nil when UNIT matches `virtual-comment-show-filter'."
+  (let ((filter (string-trim (or virtual-comment-show-filter ""))))
+    (if (string-empty-p filter)
+        t
+      (let ((tags (virtual-comment--get-tags
+                   (virtual-comment-unit-comment unit))))
+        (seq-some
+         (lambda (clause)
+           (let ((terms (split-string clause "\\+" t "[[:space:]]*")))
+             (and terms
+                  (seq-every-p
+                   (lambda (term)
+                     (setq term (downcase (string-trim term)))
+                     (cond
+                      ((string= term "-*") (null tags))
+                      ((string-prefix-p "-" term)
+                       (not (member (substring term 1) tags)))
+                      (t (member term tags))))
+                   terms))))
+         (split-string filter "," t "[[:space:]]*"))))))
+
+(defun virtual-comment-show--tag-vocabulary ()
+  "Return the project-wide tag vocabulary for the current show buffer."
+  (let (tags)
+    (when virtual-comment-show--project-data
+      (maphash
+       (lambda (_file-name buffer-data)
+         (dolist (unit (virtual-comment-buffer-data-comments buffer-data))
+           (setq tags
+                 (nconc (virtual-comment--get-tags
+                         (virtual-comment-unit-comment unit))
+                        tags))))
+       (virtual-comment-project-files virtual-comment-show--project-data)))
+    (sort (delete-dups tags) #'string<)))
+
+(defun virtual-comment-show--refresh ()
+  "Refresh the current virtual-comment show buffer."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (when virtual-comment-show--project-data
+      (maphash
+       (lambda (key val)
+         (virtual-comment--print
+          (seq-filter #'virtual-comment-show--matches-filter-p
+                      (virtual-comment-buffer-data-comments val))
+          key
+          virtual-comment-show--root))
+       (virtual-comment-project-files virtual-comment-show--project-data)))
+    (goto-char (point-min))))
+
+
+(defun virtual-comment-show-set-filter (filter)
+  "Set show-mode tag FILTER and refresh the buffer."
+  (interactive
+   (list
+    (string-join
+     (completing-read-multiple
+      "Filter: "
+      (completion-table-with-metadata
+       (mapcan (lambda (tag)
+                 (list tag (concat "-" tag)))
+               (virtual-comment-show--tag-vocabulary))
+       '((category . virtual-comment-tag)))
+      nil nil
+      virtual-comment-show-filter
+      'virtual-comment-show-filter-history)
+     ",")))
+  (setq virtual-comment-show-filter
+        (unless (string-empty-p (string-trim filter))
+          filter))
+  (virtual-comment-show--refresh))
+
+(defun virtual-comment-show-clear-filter ()
+  "Clear the show-mode tag filter and refresh the buffer."
+  (interactive)
+  (setq virtual-comment-show-filter nil)
+  (virtual-comment-show--refresh))
+
 ;; (setq virtual-comment-show-mode-map
 (defvar virtual-comment-show-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "q" 'quit-window)
+    (define-key map "f" #'virtual-comment-show-set-filter)
+    (define-key map "F" #'virtual-comment-show-clear-filter)
     map))
 
 ;;;###autoload
@@ -1470,17 +1577,10 @@ Pressing enter on comment will go to comment."
 PROJECT-DATA is `virtual-comment-project' struct.
 ROOT is project root."
   (with-current-buffer buffer
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (maphash
-       (lambda (key val)
-         (virtual-comment--print
-          (virtual-comment-buffer-data-comments val)
-          key
-          root))
-       (virtual-comment-project-files project-data))
-      (virtual-comment-show-mode)
-      (goto-char (point-min)))
+    (virtual-comment-show-mode)
+    (setq virtual-comment-show--project-data project-data
+          virtual-comment-show--root root)
+    (virtual-comment-show--refresh)
     ;; go to node for file-name
     (when file-name
       (search-forward (concat "* " file-name "\n") nil t))
