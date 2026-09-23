@@ -3,7 +3,7 @@
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.5.1
+;; Version: 0.7.0
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -327,15 +327,7 @@ with `virtual-comment-unanchored-face' and in
 
 (defun virtual-comment-unit--upgrade (unit)
   "Pad an older, shorter `virtual-comment-unit' record to the current shape.
-`cl-defstruct' records are printed and read back positionally
-\(`#s(virtual-comment-unit 1 \"hi\" \"line\")', not by slot name), so
-a `.evc' file saved by an older version of this package, before
-some slot existed, produces a record shorter than what the
-current struct definition expects.  Calling an accessor for a
-slot beyond the record's actual length raises `args-out-of-range'
-the first time it happens, rather than failing at load time where
-it would be safe to catch -- so every unit read from disk is
-upgraded once, here, before it is ever used."
+..."
   (if (and (recordp unit)
            (eq (type-of unit) 'virtual-comment-unit))
       (let* ((template (virtual-comment-unit-create))
@@ -345,6 +337,17 @@ upgraded once, here, before it is ever used."
             (let ((upgraded (copy-sequence template)))
               (dotimes (i have-len)
                 (aset upgraded i (aref unit i)))
+              ;; Pre-0.6 units captured `target' with `(thing-at-point 'line
+              ;; t)', which includes the trailing newline.
+              ;; `virtual-comment--target-line-count' treats any newline as
+              ;; another line of the region, so a legacy single-line target
+              ;; would otherwise look like a 2-line region forever and never
+              ;; stabilize under `virtual-comment--repair-overlay-maybe'.
+              ;; Strip it here, once, at the migration boundary.
+              (let ((target (virtual-comment-unit-target upgraded)))
+                (when (and target (string-suffix-p "\n" target))
+                  (setf (virtual-comment-unit-target upgraded)
+                        (string-remove-suffix "\n" target))))
               upgraded)
           unit))
     unit))
