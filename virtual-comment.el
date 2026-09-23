@@ -147,6 +147,19 @@ at (or gave up on) the comment's new location; see the
   :type 'string
   :group 'virtual-comment)
 
+(defface virtual-comment-tag-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for #tags inside `virtual-comment-show-mode' buffers."
+  :group 'virtual-comment)
+
+(defconst virtual-comment-show-font-lock-keywords
+  '(("#[[:alnum:]_-]+" 0 'virtual-comment-tag-face prepend))
+  "Font-lock keywords for `virtual-comment-show-mode'.
+Highlights tags the same way `virtual-comment--get-tags' parses
+them: a `#' followed by alphanumerics, `_' or `-'.  Uses PREPEND
+so it layers on top of `outline-mode's own heading faces instead
+of overriding them; see `font-lock-add-keywords'.")
+
 (defcustom virtual-comment-backup-count 3
   "Number of rotated backup generations to keep for the .evc file.
 Each time data is persisted, the previous backup becomes
@@ -1573,7 +1586,8 @@ Tags picked from the prompt are combined with `+' (AND), matching
 ;;;###autoload
 (define-derived-mode virtual-comment-show-mode outline-mode "evcs"
   "Major mode to view `virutal-comment' comments."
-  (setq buffer-read-only t))
+  (setq buffer-read-only t)
+  (font-lock-add-keywords nil virtual-comment-show-font-lock-keywords))
 
 (defun virtual-comment--show (project-data root buffer &optional file-name)
   "Print out an org buffer of project comments to BUFFER.
