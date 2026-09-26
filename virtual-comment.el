@@ -1236,8 +1236,9 @@ the region, no matter the direction the region was selected in."
     (let* ((anchor (line-beginning-position))
            (indent (current-indentation))
            (org-comment (virtual-comment--get-comment-at anchor))
-           (ov (when org-comment
-                 (virtual-comment--get-overlay-at anchor)))
+           (ov (if org-comment
+                   (virtual-comment--get-overlay-at anchor)
+                 (make-overlay anchor end nil t nil)))
            (target (if (and org-comment (not (use-region-p)))
                        (overlay-get ov 'virtual-comment-target)
                      (buffer-substring-no-properties anchor end)))
