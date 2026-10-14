@@ -3,7 +3,7 @@
 ;; Author: Thanh Vuong <thanhvg@gmail.com>
 ;; URL: https://github.com/thanhvg/emacs-virtual-comment
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.7.0
+;; Version: 0.7.1
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -60,6 +60,8 @@
 ;; - virtual-comment-paste: paste the last removed comment to current line
 ;; - virtual-comment-realign: realign the comments if they are misplaced
 ;; - virtual-comment-persist: manually persist project comments
+;; - virtual-comment-merge-project: merge .evc on disk (or another file, with a
+;;   prefix argument) into the in-memory comments of the project and save
 ;; - virtual-comment-show: show all comments of current project in a derived mode
 ;; - virtual-comment-show-delete-display-unit-at-point: delete comment from virtual-comment-show buffer
 ;; - virtual-comment-show-set-filter: filter virtual-comment-show buffer by #tags
@@ -1758,6 +1760,239 @@ list."
           (virtual-comment--remove-comment-from-units file-comment-units vc-point))))
 
 (add-hook 'kill-emacs-hook #'virtual-comment--emacs-kill-hook-handler)
+
+;;; Merge
+
+(defcustom virtual-comment-merge-conflict-strategy 'both
+  "How `virtual-comment-merge-project' resolves conflicting comments.
+A conflict is two different comments on the same line (same point
+and same target text).  `mine' keeps the in-memory comment,
+`theirs' keeps the one from the file being merged, `both' keeps
+both, joined by a newline, so nothing is lost."
+  :type '(choice (const :tag "Keep in-memory comment" mine)
+                 (const :tag "Keep comment from file" theirs)
+                 (const :tag "Keep both, joined" both))
+  :group 'virtual-comment)
+
+(defun virtual-comment--merge-copy-unit (unit &rest overrides)
+  "Return a copy of UNIT, replacing slots named in the plist OVERRIDES.
+Keys are slot keywords such as `:point', `:comment', `:unanchored'."
+  (cl-flet ((val (key getter)
+              (if (plist-member overrides key)
+                  (plist-get overrides key)
+                (funcall getter unit))))
+    (virtual-comment-unit-create
+     :point (val :point #'virtual-comment-unit-point)
+     :comment (val :comment #'virtual-comment-unit-comment)
+     :target (val :target #'virtual-comment-unit-target)
+     :above-target (val :above-target #'virtual-comment-unit-above-target)
+     :below-target (val :below-target #'virtual-comment-unit-below-target)
+     :unanchored (val :unanchored #'virtual-comment-unit-unanchored))))
+
+(defun virtual-comment--merge-same-fingerprint-p (a b)
+  "Non-nil if units A and B have the same target and surrounding lines."
+  (cl-every (lambda (getter)
+              (equal (or (funcall getter a) "") (or (funcall getter b) "")))
+            (list #'virtual-comment-unit-target
+                  #'virtual-comment-unit-above-target
+                  #'virtual-comment-unit-below-target)))
+
+(defun virtual-comment--merge-resolve (mine theirs)
+  "Resolve a conflict between units MINE and THEIRS, return the winner.
+Follows `virtual-comment-merge-conflict-strategy'."
+  (pcase virtual-comment-merge-conflict-strategy
+    ('theirs (virtual-comment--merge-copy-unit
+              mine :comment (virtual-comment-unit-comment theirs)))
+    ('both (virtual-comment--merge-copy-unit
+            mine :comment (concat (virtual-comment-unit-comment mine)
+                                  "\n"
+                                  (virtual-comment-unit-comment theirs))))
+    (_ mine)))
+
+(defun virtual-comment--merge-relocate (unit taken abs-file)
+  "Find a free point for UNIT, whose point is already in TAKEN.
+Looks up UNIT's target in ABS-FILE as it is on disk now (the
+checked-out branch) and, if that spot is taken too, walks down to
+the next free line.  Return (POINT . CONFIDENT) or nil when no
+place was found.  CONFIDENT is non-nil only if the target was
+located unambiguously."
+  (let ((pt (virtual-comment-unit-point unit))
+        (confident nil))
+    (if (and abs-file (file-readable-p abs-file))
+        (with-temp-buffer
+          (insert-file-contents abs-file)
+          (let* ((res (virtual-comment--resolve-target
+                       pt
+                       (or (virtual-comment-unit-target unit) "")
+                       (or (virtual-comment-unit-above-target unit) "")
+                       (or (virtual-comment-unit-below-target unit) "")))
+                 (found (plist-get res :point)))
+            (when found
+              (setq pt found
+                    confident (and (memq (plist-get res :status)
+                                         '(unique context))
+                                   t))))
+          (goto-char pt)
+          (setq pt (line-beginning-position))
+          (while (and (memql pt taken) (zerop (forward-line 1)))
+            (setq pt (line-beginning-position)))
+          (and (not (memql pt taken)) (cons pt confident)))
+      ;; file is gone on this branch: just step to a free position
+      (while (memql pt taken) (setq pt (1+ pt)))
+      (cons pt nil))))
+
+(defun virtual-comment--merge-file-units (mine theirs abs-file)
+  "Merge unit list THEIRS into unit list MINE for the file ABS-FILE.
+Neither argument is modified.  Return a list
+\(UNITS ADDED CONFLICTS RELOCATED DROPPED) where UNITS is the
+merged list sorted by point and the rest are counters.
+
+For each unit of THEIRS:
+- same point and target as one of MINE: same comment is a no-op,
+  a different comment is a conflict (see
+  `virtual-comment-merge-conflict-strategy');
+- same target, context and comment text as one of MINE, at another
+  point: a duplicate the other side already moved, skipped;
+- same point but different target: both can't live on one line, so
+  it is relocated (see `virtual-comment--merge-relocate') and
+  flagged unanchored unless found confidently;
+- otherwise it is simply added."
+  (let ((result (copy-sequence mine))
+        (added 0) (conflicts 0) (relocated 0) (dropped 0))
+    (dolist (th theirs)
+      (let* ((pt (virtual-comment-unit-point th))
+             (at-point (seq-find
+                        (lambda (m) (eql (virtual-comment-unit-point m) pt))
+                        result))
+             (same-target (and at-point
+                               (equal (virtual-comment-unit-target at-point)
+                                      (virtual-comment-unit-target th))))
+             (dup (seq-find
+                   (lambda (m)
+                     (and (virtual-comment--merge-same-fingerprint-p m th)
+                          (equal (virtual-comment-unit-comment m)
+                                 (virtual-comment-unit-comment th))))
+                   result)))
+        (cond
+         ((and same-target
+               (not (equal (virtual-comment-unit-comment at-point)
+                           (virtual-comment-unit-comment th))))
+          (cl-incf conflicts)
+          (setq result
+                (mapcar (lambda (m)
+                          (if (eq m at-point)
+                              (virtual-comment--merge-resolve m th)
+                            m))
+                        result)))
+         ((or same-target dup) nil)
+         (at-point
+          (let ((placed (virtual-comment--merge-relocate
+                         th
+                         (mapcar #'virtual-comment-unit-point result)
+                         abs-file)))
+            (if placed
+                (progn
+                  (cl-incf relocated)
+                  (push (virtual-comment--merge-copy-unit
+                         th
+                         :point (car placed)
+                         :unanchored (or (virtual-comment-unit-unanchored th)
+                                         (not (cdr placed))))
+                        result))
+              (cl-incf dropped))))
+         (t (cl-incf added)
+            (push th result)))))
+    (list (sort result (lambda (a b) (< (virtual-comment-unit-point a)
+                                        (virtual-comment-unit-point b))))
+          added conflicts relocated dropped)))
+
+(defun virtual-comment--merge-map-project-buffers (root project fn)
+  "Call FN in every live comment buffer belonging to the project at ROOT.
+Each buffer is first pointed at PROJECT and its cached buffer
+data is dropped, so it is re-fetched from PROJECT."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (bound-and-true-p virtual-comment-mode)
+                 buffer-file-name
+                 (equal (virtual-comment--get-root) root))
+        (setq virtual-comment--project project
+              virtual-comment--buffer-data nil)
+        (funcall fn)))))
+
+(defun virtual-comment--merge-sync-buffer ()
+  "Flush the current buffer's overlays into the project data now."
+  (when virtual-comment--update-data-timer
+    (cancel-timer virtual-comment--update-data-timer)
+    (setq virtual-comment--update-data-timer nil))
+  (virtual-comment--update-data))
+
+(defun virtual-comment--merge-refresh-buffer ()
+  "Rebuild the current buffer's overlays from the project data."
+  (virtual-comment--reload-data)
+  (virtual-comment-realign))
+
+;;;###autoload
+(defun virtual-comment-merge-project (&optional from-file)
+  "Merge saved comments into the current project's in-memory comments.
+By default the project's .evc file on disk is merged; with a
+prefix argument prompt for another file, e.g. a `.evc.bk' backup
+or a copy of the other branch's .evc made with `git show'.
+
+Open comment buffers are synced first, so unsaved comments are
+kept.  Comments in both places are not duplicated; conflicts are
+resolved by `virtual-comment-merge-conflict-strategy'.  The result
+is saved to the project's .evc (the old one is rotated into the
+backups) and the overlays in open buffers are rebuilt and
+realigned."
+  (interactive
+   (list (when current-prefix-arg
+           (read-file-name "Merge comments from: "
+                           (file-name-directory (virtual-comment-get-evc-file))
+                           nil t))))
+  (let* ((root (virtual-comment--get-root))
+         (evc (virtual-comment-get-evc-file))
+         (source (or from-file evc))
+         (project (virtual-comment--get-project))
+         (plan nil)
+         (stats (list 0 0 0 0)))
+    (unless (file-readable-p source)
+      (user-error "Can't read %s" source))
+    (virtual-comment--merge-map-project-buffers
+     root project #'virtual-comment--merge-sync-buffer)
+    (let ((mine (virtual-comment-project-files project))
+          (theirs (virtual-comment--load-data-from-file source)))
+      (maphash
+       (lambda (fname th-data)
+         (let* ((my-data (gethash fname mine))
+                (res (virtual-comment--merge-file-units
+                      (and my-data (virtual-comment-buffer-data-comments my-data))
+                      (virtual-comment-buffer-data-comments th-data)
+                      (expand-file-name fname root))))
+           (setq stats (cl-mapcar #'+ stats (cdr res)))
+           (push (cons fname (car res)) plan)))
+       theirs))
+    (if (zerop (apply #'+ stats))
+        (message "virtual-comment: nothing to merge from %s" source)
+      (when (or (not (called-interactively-p 'interactive))
+                (y-or-n-p
+                 (format "Merge %s: %d added, %d conflicts (%s), %d relocated, %d dropped? "
+                         (file-name-nondirectory source)
+                         (nth 0 stats) (nth 1 stats)
+                         virtual-comment-merge-conflict-strategy
+                         (nth 2 stats) (nth 3 stats))))
+        (dolist (entry plan)
+          ;; mutate in place: open buffers hold references to these structs
+          (let ((data (virtual-comment--get-buffer-data-in-project
+                       (car entry) project)))
+            (setf (virtual-comment-buffer-data-filename data) (car entry)
+                  (virtual-comment-buffer-data-comments data) (cdr entry))))
+        (virtual-comment--dump-data-to-file
+         (virtual-comment--take-non-nil (virtual-comment-project-files project))
+         evc)
+        (virtual-comment--merge-map-project-buffers
+         root project #'virtual-comment--merge-refresh-buffer)
+        (message "virtual-comment: merged %s (%d added, %d conflicts, %d relocated, %d dropped)"
+                 source (nth 0 stats) (nth 1 stats) (nth 2 stats) (nth 3 stats))))))
 
 (provide 'virtual-comment)
 ;;; virtual-comment.el ends here
